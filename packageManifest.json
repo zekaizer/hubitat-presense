@@ -41,6 +41,13 @@
       "namespace": "zekaizer",
       "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/delayed-away-presence.groovy",
       "required": true
+    },
+    {
+      "id": "mqtt-wifi-client",
+      "name": "MQTT WiFi Client",
+      "namespace": "zekaizer",
+      "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/mqtt-wifi-client.groovy",
+      "required": false
     }
   ],
   "tags": [

@@ -123,3 +123,7 @@ hubitat-presense/
 - 연결 문제에 대한 엣지 케이스 처리
 - 속성과 이벤트를 통한 명확한 사용자 피드백 제공
 - 실제 하드웨어로 배포 전 테스트
+
+## 참고 문서
+
+- [Hubitat 개발자 문서](https://docs2.hubitat.com/en/developer) - Hubitat 플랫폼 개발을 위한 공식 가이드

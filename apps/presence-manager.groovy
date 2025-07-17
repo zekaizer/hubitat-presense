@@ -141,8 +141,10 @@ def mqttPage() {
         
         section("Topics") {
             paragraph "Will subscribe to:"
-            paragraph "• AsusAC68U/status/+/lastseen/epoch"
-            paragraph "• UnifiU6Pro/status/+/lastseen/epoch"
+            paragraph "• AsusAC68U/status/mac-+/lastseen/epoch"
+            paragraph "• UnifiU6Pro/status/mac-+/lastseen/epoch"
+            paragraph ""
+            paragraph "<b>MAC 형식:</b> mac-aa-bb-cc-dd-ee-ff"
         }
     }
 }
@@ -202,7 +204,7 @@ def initialize() {
     
     // Subscribe to MQTT if configured
     if (settings.mqttBroker) {
-        subscribeMQTT()
+        setupMQTT()
     }
     
     // Initial status update
@@ -336,28 +338,11 @@ def confirmAway() {
     }
 }
 
-// MQTT Handler
-def mqttMessageReceived(topic, payload) {
-    logDebug "MQTT message: ${topic} = ${payload}"
-    
-    // Parse MAC from topic
-    def mac = parseMacFromTopic(topic)
-    if (mac) {
-        def device = findDeviceByMac(mac)
-        if (device) {
-            device.wifiDetected()
-        }
-    }
-}
-
-def parseMacFromTopic(topic) {
-    // Extract MAC from topic: "AsusAC68U/status/mac-XX-XX-XX/lastseen/epoch"
-    def matcher = topic =~ /mac-([0-9a-fA-F-]+)/
-    if (matcher) {
-        return matcher[0][1].replace('-', ':')
-    }
-    return null
-}
+// Legacy MQTT Handler (replaced by MQTT driver)
+// def mqttMessageReceived(topic, payload) {
+//     // This method is now handled by the MQTT WiFi Client driver
+//     // which calls wifiDeviceDetected(mac, timestamp) directly
+// }
 
 // Webhook Handler for GPS
 mappings {
@@ -480,6 +465,62 @@ def handleDeviceUpdates() {
             app.removeSetting("editMAC_${deviceId}")
             app.removeSetting("editGPSID_${deviceId}")
         }
+    }
+}
+
+// MQTT Setup
+def setupMQTT() {
+    try {
+        log.info "Setting up MQTT connection to ${settings.mqttBroker}:${settings.mqttPort ?: 1883}"
+        
+        if (settings.mqttBroker) {
+            createOrUpdateMQTTDevice()
+        } else {
+            logDebug "No MQTT broker configured, skipping MQTT setup"
+        }
+        
+    } catch (Exception e) {
+        log.error "Failed to setup MQTT: ${e.message}"
+    }
+}
+
+def createOrUpdateMQTTDevice() {
+    def dni = "mqtt-wifi-client"
+    def device = getChildDevice(dni)
+    
+    if (!device) {
+        device = addChildDevice(
+            "zekaizer", 
+            "MQTT WiFi Client", 
+            dni, 
+            [
+                name: "MQTT WiFi Client",
+                label: "MQTT WiFi Client"
+            ]
+        )
+        log.info "Created MQTT WiFi Client device"
+    }
+    
+    // Update device settings
+    device.updateSetting("mqttBroker", settings.mqttBroker)
+    device.updateSetting("mqttPort", settings.mqttPort ?: 1883)
+    device.updateSetting("mqttUsername", settings.mqttUsername ?: "")
+    device.updateSetting("mqttPassword", settings.mqttPassword ?: "")
+    
+    // Trigger device refresh to connect
+    device.refresh()
+}
+
+// WiFi Detection Handler (called by MQTT driver)
+def wifiDeviceDetected(mac, timestamp) {
+    logDebug "WiFi device detected: MAC=${mac}, Timestamp=${timestamp}"
+    
+    def device = findDeviceByMac(mac)
+    if (device) {
+        logInfo "WiFi detection for ${device.displayName} (${mac})"
+        device.wifiDetected()
+    } else {
+        logDebug "No matching device found for MAC: ${mac}"
     }
 }
 
