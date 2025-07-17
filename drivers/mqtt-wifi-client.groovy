@@ -40,20 +40,41 @@ def updated() {
 
 def initialize() {
     state.messageCount = 0
+    state.retryCount = 0
     sendEvent(name: "connectionStatus", value: "disconnected")
     sendEvent(name: "messageCount", value: 0)
     
+    logInfo "Initializing MQTT WiFi Client"
+    
     if (mqttBroker) {
-        runIn(2, connect)
+        logInfo "MQTT broker configured: ${mqttBroker}:${mqttPort ?: 1883}"
+        runIn(3, connect)
+    } else {
+        logInfo "No MQTT broker configured"
+        sendEvent(name: "connectionStatus", value: "error")
     }
 }
 
 def connect() {
     try {
+        if (!mqttBroker) {
+            log.error "No MQTT broker configured"
+            sendEvent(name: "connectionStatus", value: "error")
+            return
+        }
+        
         def broker = "tcp://${mqttBroker}:${mqttPort ?: 1883}"
         def clientId = "hubitat_wifi_${device.id}_${now()}"
         
-        logInfo "Connecting to MQTT broker: ${broker}"
+        logInfo "Connecting to MQTT broker: ${broker} (attempt ${(state.retryCount ?: 0) + 1})"
+        sendEvent(name: "connectionStatus", value: "connecting")
+        
+        // Disconnect any existing connection first
+        try {
+            interfaces.mqtt.disconnect()
+        } catch (Exception ex) {
+            // Ignore disconnect errors
+        }
         
         if (mqttUsername && mqttPassword) {
             interfaces.mqtt.connect(broker, clientId, mqttUsername, mqttPassword)
@@ -66,6 +87,14 @@ def connect() {
     } catch (Exception e) {
         log.error "Failed to connect to MQTT broker: ${e.message}"
         sendEvent(name: "connectionStatus", value: "error")
+        
+        // Retry with backoff
+        state.retryCount = (state.retryCount ?: 0) + 1
+        if (state.retryCount < 5) {
+            def retryDelay = Math.min(60, 10 * state.retryCount)
+            logInfo "Will retry connection in ${retryDelay} seconds"
+            runIn(retryDelay, connect)
+        }
     }
 }
 
@@ -88,18 +117,26 @@ def refresh() {
 
 // MQTT status callback - required method
 def mqttClientStatus(String status) {
-    logDebug "MQTT client status: ${status}"
+    logInfo "MQTT client status: ${status}"
     
     if (status.startsWith("Error")) {
         log.error "MQTT Error: ${status}"
         sendEvent(name: "connectionStatus", value: "error")
         
-        // Retry connection in 30 seconds
-        runIn(30, connect)
+        // Retry connection with backoff
+        state.retryCount = (state.retryCount ?: 0) + 1
+        if (state.retryCount < 5) {
+            def retryDelay = Math.min(60, 15 * state.retryCount)
+            logInfo "Will retry connection in ${retryDelay} seconds (retry ${state.retryCount}/5)"
+            runIn(retryDelay, connect)
+        } else {
+            log.error "Maximum retry attempts reached. Please check MQTT broker settings."
+        }
         
     } else if (status.contains("succeeded")) {
         logInfo "MQTT connection successful"
         sendEvent(name: "connectionStatus", value: "connected")
+        state.retryCount = 0  // Reset retry counter on success
         
         // Subscribe to WiFi topics after successful connection
         runIn(1, subscribeToTopics)
@@ -107,6 +144,12 @@ def mqttClientStatus(String status) {
     } else if (status.contains("disconnected")) {
         logInfo "MQTT disconnected"
         sendEvent(name: "connectionStatus", value: "disconnected")
+        
+        // Auto-reconnect on unexpected disconnection
+        if (mqttBroker) {
+            logInfo "Attempting to reconnect..."
+            runIn(10, connect)
+        }
     }
 }
 

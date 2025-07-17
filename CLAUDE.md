@@ -127,3 +127,7 @@ hubitat-presense/
 ## 참고 문서
 
 - [Hubitat 개발자 문서](https://docs2.hubitat.com/en/developer) - Hubitat 플랫폼 개발을 위한 공식 가이드
+
+## 언어 설정
+
+- 설정 페이지는 영어를 사용한다.

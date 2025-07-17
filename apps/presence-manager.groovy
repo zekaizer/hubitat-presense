@@ -431,16 +431,23 @@ def getStatusSummary() {
         def statusColor = connectionStatus == "connected" ? "green" : 
                          connectionStatus == "error" ? "red" : "orange"
         
+        summary += "• Device: Created<br>"
         summary += "• <span style='color: ${statusColor};'>Connection: ${connectionStatus}</span><br>"
         summary += "• Messages received: ${messageCount}<br>"
         
-        if (connectionStatus != "connected") {
-            summary += "• <span style='color: red;'>⚠️ WiFi detection disabled</span><br>"
+        if (connectionStatus == "connected") {
+            summary += "• <span style='color: green;'>✓ WiFi detection active</span><br>"
+        } else if (connectionStatus == "error") {
+            summary += "• <span style='color: red;'>⚠️ Connection failed - check MQTT settings</span><br>"
+        } else {
+            summary += "• <span style='color: orange;'>⚠️ WiFi detection disabled - connecting...</span><br>"
         }
     } else if (settings.mqttBroker) {
-        summary += "• <span style='color: orange;'>Creating MQTT client...</span><br>"
+        summary += "• <span style='color: orange;'>Device: Creating...</span><br>"
+        summary += "• <span style='color: orange;'>Check logs for creation status</span><br>"
     } else {
         summary += "• <span style='color: red;'>MQTT broker not configured</span><br>"
+        summary += "• <span style='color: red;'>⚠️ WiFi detection disabled</span><br>"
     }
     
     return summary
@@ -515,27 +522,58 @@ def createOrUpdateMQTTDevice() {
     def dni = "mqtt-wifi-client"
     def device = getChildDevice(dni)
     
-    if (!device) {
-        device = addChildDevice(
-            "zekaizer", 
-            "MQTT WiFi Client", 
-            dni, 
-            [
-                name: "MQTT WiFi Client",
-                label: "MQTT WiFi Client"
-            ]
-        )
-        log.info "Created MQTT WiFi Client device"
+    try {
+        if (!device) {
+            log.info "Creating MQTT WiFi Client device..."
+            device = addChildDevice(
+                "zekaizer", 
+                "MQTT WiFi Client", 
+                dni, 
+                [
+                    name: "MQTT WiFi Client",
+                    label: "MQTT WiFi Client"
+                ]
+            )
+            log.info "Successfully created MQTT WiFi Client device"
+        } else {
+            log.info "MQTT WiFi Client device already exists, updating settings"
+        }
+        
+        if (device) {
+            // Update device settings with error handling
+            try {
+                device.updateSetting("mqttBroker", settings.mqttBroker)
+                device.updateSetting("mqttPort", settings.mqttPort ?: 1883)
+                device.updateSetting("mqttUsername", settings.mqttUsername ?: "")
+                device.updateSetting("mqttPassword", settings.mqttPassword ?: "")
+                log.info "Updated MQTT device settings"
+                
+                // Give device time to process settings before refresh
+                runIn(2, triggerMQTTRefresh)
+                
+            } catch (Exception e) {
+                log.error "Failed to update MQTT device settings: ${e.message}"
+            }
+        } else {
+            log.error "Failed to create or find MQTT device"
+        }
+        
+    } catch (Exception e) {
+        log.error "Failed to create MQTT device: ${e.message}"
+        log.error "Make sure MQTT WiFi Client driver is properly installed"
     }
-    
-    // Update device settings
-    device.updateSetting("mqttBroker", settings.mqttBroker)
-    device.updateSetting("mqttPort", settings.mqttPort ?: 1883)
-    device.updateSetting("mqttUsername", settings.mqttUsername ?: "")
-    device.updateSetting("mqttPassword", settings.mqttPassword ?: "")
-    
-    // Trigger device refresh to connect
-    device.refresh()
+}
+
+def triggerMQTTRefresh() {
+    def device = getChildDevice("mqtt-wifi-client")
+    if (device) {
+        try {
+            device.refresh()
+            log.info "Triggered MQTT device refresh"
+        } catch (Exception e) {
+            log.error "Failed to refresh MQTT device: ${e.message}"
+        }
+    }
 }
 
 // WiFi Detection Handler (called by MQTT driver)
