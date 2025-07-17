@@ -28,7 +28,7 @@ metadata {
     }
     
     preferences {
-        input "deviceName", "text", title: "Device Name", defaultValue: "${device.displayName ?: 'Unknown Device'}", required: true
+        input "deviceName", "text", title: "Device Name", defaultValue: "Device", required: true
         input "wifiTimeout", "number", title: "WiFi Timeout (seconds)", defaultValue: 180, required: true
         input "gpsExitDelay", "number", title: "GPS Exit Delay (seconds)", defaultValue: 120, required: true
         input "arrivalDelay", "number", title: "Arrival Delay (seconds)", defaultValue: 0
