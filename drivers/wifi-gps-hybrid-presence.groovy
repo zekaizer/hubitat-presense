@@ -6,7 +6,7 @@
  *  Individual device driver for WiFi and GPS based presence detection
  */
 metadata {
-    definition (name: "WiFi GPS Hybrid Presence", namespace: "custom", author: "Your Name") {
+    definition (name: "WiFi GPS Hybrid Presence", namespace: "zekaizer", author: "Luke Lee") {
         capability "Presence Sensor"
         capability "Sensor"
         capability "Refresh"

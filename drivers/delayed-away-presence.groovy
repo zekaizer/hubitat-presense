@@ -4,7 +4,7 @@
  *  Virtual presence device with configurable away delay
  */
 metadata {
-    definition (name: "Delayed Away Presence", namespace: "custom", author: "Your Name") {
+    definition (name: "Delayed Away Presence", namespace: "zekaizer", author: "Luke Lee") {
         capability "Presence Sensor"
         capability "Sensor"
         

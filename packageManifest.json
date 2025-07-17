@@ -1,19 +1,19 @@
 {
   "packageName": "WiFi GPS Hybrid Presence System",
-  "author": "Luke",
-  "version": "1.0.0",
+  "author": "Luke Lee",
+  "version": "1.0.1",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2025-01-17",
   "description": "Advanced WiFi/GPS hybrid presence detection system with WiFi priority logic, manual override, and delayed away features",
   "licenseFile": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/LICENSE",
-  "releaseNotes": "Initial release with WiFi priority logic - WiFi detection triggers arrival, GPS exit requires WiFi timeout for departure",
+  "releaseNotes": "Version 1.0.1 - Updated author information and namespace to 'zekaizer'",
   "documentationLink": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/README.md",
   "communityLink": "https://community.hubitat.com/t/wifi-gps-hybrid-presence-system/",
   "apps": [
     {
       "id": "presence-manager-enhanced",
       "name": "WiFi GPS Presence Manager Enhanced",
-      "namespace": "custom",
+      "namespace": "zekaizer",
       "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/apps/presence-manager.groovy",
       "required": true,
       "primary": true,
@@ -24,21 +24,21 @@
     {
       "id": "wifi-gps-hybrid-presence",
       "name": "WiFi GPS Hybrid Presence",
-      "namespace": "custom",
+      "namespace": "zekaizer",
       "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/wifi-gps-hybrid-presence.groovy",
       "required": true
     },
     {
       "id": "anyone-presence-override",
       "name": "Anyone Presence Override",
-      "namespace": "custom",
+      "namespace": "zekaizer",
       "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/anyone-presence-override.groovy",
       "required": true
     },
     {
       "id": "delayed-away-presence",
       "name": "Delayed Away Presence",
-      "namespace": "custom",
+      "namespace": "zekaizer",
       "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/delayed-away-presence.groovy",
       "required": true
     }

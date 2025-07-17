@@ -5,7 +5,7 @@
  *  with manual override capability
  */
 metadata {
-    definition (name: "Anyone Presence Override", namespace: "custom", author: "Your Name") {
+    definition (name: "Anyone Presence Override", namespace: "zekaizer", author: "Luke Lee") {
         capability "Presence Sensor"
         capability "Switch"  // For manual override
         capability "Sensor"

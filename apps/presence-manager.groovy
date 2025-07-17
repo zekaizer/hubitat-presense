@@ -5,8 +5,8 @@
  */
 definition(
     name: "WiFi GPS Presence Manager Enhanced",
-    namespace: "custom",
-    author: "Your Name",
+    namespace: "zekaizer",
+    author: "Luke Lee",
     description: "Advanced presence detection with Anyone and Away delay devices",
     category: "Convenience",
     parent: null,
@@ -171,7 +171,7 @@ def createPresenceDevice(name, mac, gpsId) {
     def existing = getChildDevice(dni)
     
     if (!existing) {
-        def device = addChildDevice("custom", "WiFi GPS Hybrid Presence", dni, [
+        def device = addChildDevice("zekaizer", "WiFi GPS Hybrid Presence", dni, [
             name: name,
             label: name,
             data: [
@@ -189,7 +189,7 @@ def createAnyoneDevice() {
     
     if (!device) {
         device = addChildDevice(
-            "custom", 
+            "zekaizer", 
             "Anyone Presence Override", 
             dni, 
             [
@@ -207,7 +207,7 @@ def createAwayDevice() {
     
     if (!device) {
         device = addChildDevice(
-            "custom", 
+            "zekaizer", 
             "Delayed Away Presence", 
             dni, 
             [
