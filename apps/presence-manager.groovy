@@ -592,7 +592,7 @@ def wifiDeviceDetected(mac, timestamp) {
     
     def device = findDeviceByMac(mac)
     if (device) {
-        logInfo "WiFi detection for ${device.displayName} (${mac})"
+        log.info "WiFi detection for ${device.displayName} (${mac})"
         device.wifiDetected()
     } else {
         logDebug "No matching device found for MAC: ${mac}"

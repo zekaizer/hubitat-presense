@@ -33,10 +33,26 @@ def installed() {
 }
 
 def updated() {
-    log.info "Updating MQTT WiFi Client"
-    disconnect()
+    log.info "Updating MQTT WiFi Client - will force reconnect for new subscriptions"
+    
+    // Force disconnect and clear all scheduled tasks
+    try {
+        interfaces.mqtt.disconnect()
+    } catch (Exception e) {
+        // Ignore disconnect errors
+    }
+    
     unschedule()
+    state.retryCount = 0
+    
+    // Initialize and force connection after short delay
     initialize()
+    
+    // Ensure reconnection happens even if settings are the same
+    if (mqttBroker) {
+        runIn(3, connect)
+        logInfo "Forced reconnection scheduled for subscription update"
+    }
 }
 
 def initialize() {
@@ -110,15 +126,17 @@ def disconnect() {
 }
 
 def refresh() {
-    logInfo "Refreshing connection"
-    def currentStatus = device.currentValue("connectionStatus")
-    logInfo "Current connection status: ${currentStatus}"
+    logInfo "Refreshing connection - forcing reconnect to update subscriptions"
     
-    if (currentStatus != "connected") {
-        logInfo "Status is not connected, attempting to connect..."
-        connect()
-    } else {
-        logInfo "Already connected, skipping connection attempt"
+    // Always force reconnect to ensure updated topic subscriptions
+    try {
+        disconnect()
+        runIn(2, connect)
+        logInfo "Scheduled reconnect in 2 seconds"
+    } catch (Exception e) {
+        logInfo "Error during refresh: ${e.message}"
+        // Try direct connect if disconnect fails
+        runIn(1, connect)
     }
 }
 
