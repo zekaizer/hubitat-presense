@@ -16,6 +16,7 @@ metadata {
         command "connect"
         command "disconnect"
         command "refresh"
+        command "updateSubscriptions", [[name:"macList", type:"JSON_OBJECT"]]
     }
     
     preferences {
@@ -25,7 +26,9 @@ metadata {
         input "mqttPassword", "password", title: "MQTT Password (optional)", required: false
         input "enableDebug", "bool", title: "Enable Debug Logging", defaultValue: true
         input "enableInfo", "bool", title: "Enable Info Logging", defaultValue: true
-        input "wifiTimeout", "number", title: "WiFi Timeout (seconds)", defaultValue: 180, required: true, range: "30..600"
+        input "wifiTimeout", "number", title: "WiFi Timeout (seconds)", 
+            description: "Time before marking device disconnected when no MQTT messages received", 
+            defaultValue: 60, required: true, range: "30..600"
     }
 }
 
@@ -62,6 +65,7 @@ def initialize() {
     state.retryCount = 0
     state.lastMessageTime = [:]
     state.deviceStates = [:]
+    state.subscribedMACs = []
     
     sendEvent(name: "connectionStatus", value: "disconnected")
     sendEvent(name: "messageCount", value: 0)
@@ -189,16 +193,69 @@ def mqttClientStatus(String status) {
 
 def subscribeToTopics() {
     try {
-        // Subscribe to Asus router topics (wildcard for any MAC address)
-        interfaces.mqtt.subscribe("AsusAC68U/status/+/lastseen/epoch")
-        logInfo "Subscribed to Asus router topics: AsusAC68U/status/+/lastseen/epoch"
-        
-        // Subscribe to Unifi router topics (wildcard for any MAC address)
-        interfaces.mqtt.subscribe("UnifiU6Pro/status/+/lastseen/epoch")
-        logInfo "Subscribed to Unifi router topics: UnifiU6Pro/status/+/lastseen/epoch"
+        // Get MAC list from parent app
+        def macList = parent?.getRegisteredMACs() ?: []
+        updateSubscriptions(macList)
         
     } catch (Exception e) {
         log.error "Failed to subscribe to topics: ${e.message}"
+    }
+}
+
+def updateSubscriptions(macList) {
+    try {
+        if (!macList || macList.size() == 0) {
+            logInfo "No MAC addresses to subscribe to"
+            return
+        }
+        
+        // Unsubscribe from old topics first
+        unsubscribeFromOldTopics()
+        
+        // Subscribe to specific MAC addresses
+        def subscribedCount = 0
+        macList.each { mac ->
+            def normalizedMAC = mac.toLowerCase().replaceAll(':', '-')
+            
+            // Subscribe to Asus router topics
+            def asusTopic = "AsusAC68U/status/mac-${normalizedMAC}/lastseen/epoch"
+            interfaces.mqtt.subscribe(asusTopic)
+            logInfo "Subscribed to Asus topic: ${asusTopic}"
+            
+            // Subscribe to Unifi router topics  
+            def unifiTopic = "UnifiU6Pro/status/mac-${normalizedMAC}/lastseen/epoch"
+            interfaces.mqtt.subscribe(unifiTopic)
+            logInfo "Subscribed to Unifi topic: ${unifiTopic}"
+            
+            subscribedCount++
+        }
+        
+        // Store subscribed MACs for later cleanup
+        state.subscribedMACs = macList
+        logInfo "Successfully subscribed to ${subscribedCount} MAC addresses"
+        
+    } catch (Exception e) {
+        log.error "Failed to update subscriptions: ${e.message}"
+    }
+}
+
+def unsubscribeFromOldTopics() {
+    try {
+        // Unsubscribe from previously subscribed topics
+        state.subscribedMACs?.each { mac ->
+            def normalizedMAC = mac.toLowerCase().replaceAll(':', '-')
+            
+            try {
+                interfaces.mqtt.unsubscribe("AsusAC68U/status/mac-${normalizedMAC}/lastseen/epoch")
+                interfaces.mqtt.unsubscribe("UnifiU6Pro/status/mac-${normalizedMAC}/lastseen/epoch")
+            } catch (Exception e) {
+                // Ignore unsubscribe errors
+            }
+        }
+        logDebug "Unsubscribed from old topics"
+        
+    } catch (Exception e) {
+        logDebug "Error unsubscribing from old topics: ${e.message}"
     }
 }
 
@@ -309,7 +366,7 @@ def checkWifiTimeouts() {
     if (!state.lastMessageTime) state.lastMessageTime = [:]
     
     def currentTime = now()
-    def timeoutMs = (wifiTimeout ?: 180) * 1000
+    def timeoutMs = (wifiTimeout ?: 60) * 1000
     def timedOutDevices = []
     
     state.lastMessageTime.each { mac, lastTime ->

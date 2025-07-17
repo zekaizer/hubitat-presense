@@ -232,6 +232,9 @@ def createPresenceDevice(name, mac, gpsId) {
             ]
         ])
         log.info "Created presence device: ${name}"
+        
+        // Update MQTT subscriptions
+        updateMQTTSubscriptions()
     }
 }
 
@@ -472,6 +475,9 @@ def handleDeviceUpdates() {
             app.removeSetting("editName_${deviceId}")
             app.removeSetting("editMAC_${deviceId}")
             app.removeSetting("editGPSID_${deviceId}")
+            
+            // Update MQTT subscriptions after deletion
+            updateMQTTSubscriptions()
             return
         }
         
@@ -499,6 +505,9 @@ def handleDeviceUpdates() {
             app.removeSetting("editName_${deviceId}")
             app.removeSetting("editMAC_${deviceId}")
             app.removeSetting("editGPSID_${deviceId}")
+            
+            // Update MQTT subscriptions if MAC changed
+            updateMQTTSubscriptions()
         }
     }
 }
@@ -609,6 +618,41 @@ def wifiDeviceTimeout(mac) {
         device.wifiLost()
     } else {
         logDebug "No matching device found for timeout MAC: ${mac}"
+    }
+}
+
+// Get registered MAC addresses for MQTT subscription
+def getRegisteredMACs() {
+    def devices = getChildDevices().findAll { 
+        it.deviceNetworkId.startsWith("presence-") 
+    }
+    
+    def macList = []
+    devices.each { device ->
+        def mac = device.data?.mac
+        if (mac) {
+            macList << mac
+        }
+    }
+    
+    logDebug "Registered MACs: ${macList}"
+    return macList
+}
+
+// Update MQTT subscriptions when devices change
+def updateMQTTSubscriptions() {
+    def mqttDevice = getChildDevice("mqtt-wifi-client")
+    if (mqttDevice && mqttDevice.currentValue("connectionStatus") == "connected") {
+        runIn(1, delayedMQTTUpdate)
+    }
+}
+
+def delayedMQTTUpdate() {
+    def mqttDevice = getChildDevice("mqtt-wifi-client")
+    if (mqttDevice) {
+        def macList = getRegisteredMACs()
+        mqttDevice.updateSubscriptions(macList)
+        logDebug "Updated MQTT subscriptions for ${macList.size()} devices"
     }
 }
 
