@@ -1,0 +1,87 @@
+# Hubitat Development - .gitignore
+
+# Deployment files
+deployment/
+*.deployment
+
+# Backup files
+backups/
+*.backup
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# Node.js (if using any JS tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Test output
+test-results/
+coverage/
+
+# Cache directories
+.cache/
+.parcel-cache/
+
+# Sensitive configuration
+config.json
+secrets.json
+hubitat-config.json
+
+# Build artifacts
+build/
+dist/
+
+# Lock files (if using package managers)
+package-lock.json
+yarn.lock
+
+# Groovy/Java specific
+*.class
+*.jar
+*.war
+*.ear
+.gradle/
+gradle/
+gradlew
+gradlew.bat
+
+# Documentation builds
+docs/_build/
+site/
+
+# Local development files
+local/
+dev/
+scratch/
