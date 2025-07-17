@@ -111,8 +111,14 @@ def disconnect() {
 
 def refresh() {
     logInfo "Refreshing connection"
-    if (device.currentValue("connectionStatus") != "connected") {
+    def currentStatus = device.currentValue("connectionStatus")
+    logInfo "Current connection status: ${currentStatus}"
+    
+    if (currentStatus != "connected") {
+        logInfo "Status is not connected, attempting to connect..."
         connect()
+    } else {
+        logInfo "Already connected, skipping connection attempt"
     }
 }
 
