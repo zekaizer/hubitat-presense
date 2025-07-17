@@ -67,8 +67,37 @@ def devicesPage() {
             def devices = getChildDevices().findAll { 
                 it.deviceNetworkId.startsWith("presence-")
             }
-            devices.each { device ->
-                paragraph "${device.displayName} - ${device.deviceNetworkId}"
+            
+            if (devices.size() == 0) {
+                paragraph "생성된 디바이스가 없습니다."
+            } else {
+                devices.each { device ->
+                    def deviceId = device.deviceNetworkId
+                    def isEditing = settings["edit_${deviceId}"]
+                    
+                    if (isEditing) {
+                        // Edit mode
+                        input "edit_${deviceId}", "bool", title: "편집 모드", defaultValue: true, submitOnChange: true
+                        input "editName_${deviceId}", "text", title: "Device Name", 
+                            defaultValue: device.displayName, submitOnChange: true
+                        input "editMAC_${deviceId}", "text", title: "WiFi MAC Address (예: AA:BB:CC:DD:EE:FF)", 
+                            defaultValue: device.data?.mac ?: "", submitOnChange: true
+                        input "editGPSID_${deviceId}", "text", title: "GPS Device ID (예: phone1, iphone_john)", 
+                            defaultValue: device.data?.gpsId ?: "", submitOnChange: true
+                        
+                        if (settings["editName_${deviceId}"] && settings["editMAC_${deviceId}"]) {
+                            paragraph "✓ 변경사항이 저장됩니다"
+                        }
+                    } else {
+                        // View mode
+                        def mac = device.data?.mac ?: "설정되지 않음"
+                        def gpsId = device.data?.gpsId ?: "설정되지 않음"
+                        paragraph "<b>${device.displayName}</b><br>MAC: ${mac}<br>GPS ID: ${gpsId}"
+                        input "edit_${deviceId}", "bool", title: "편집", defaultValue: false, submitOnChange: true
+                        input "delete_${deviceId}", "bool", title: "삭제", defaultValue: false, submitOnChange: true
+                    }
+                    paragraph "―――――――――――――――――――――――――"
+                }
             }
         }
     }
@@ -154,6 +183,9 @@ def initialize() {
         app.updateSetting("newDeviceMAC", "")
         app.updateSetting("newDeviceGPSID", "")
     }
+    
+    // Handle device edits and deletions
+    handleDeviceUpdates()
     
     // Create or update special devices
     createAnyoneDevice()
@@ -400,6 +432,55 @@ def getStatusSummary() {
     }
     
     return summary
+}
+
+// Device management functions
+def handleDeviceUpdates() {
+    def devices = getChildDevices().findAll { 
+        it.deviceNetworkId.startsWith("presence-") 
+    }
+    
+    devices.each { device ->
+        def deviceId = device.deviceNetworkId
+        
+        // Handle deletions
+        if (settings["delete_${deviceId}"]) {
+            log.info "Deleting device: ${device.displayName}"
+            deleteChildDevice(deviceId)
+            app.removeSetting("delete_${deviceId}")
+            app.removeSetting("edit_${deviceId}")
+            app.removeSetting("editName_${deviceId}")
+            app.removeSetting("editMAC_${deviceId}")
+            app.removeSetting("editGPSID_${deviceId}")
+            return
+        }
+        
+        // Handle edits
+        if (settings["edit_${deviceId}"] && 
+            settings["editName_${deviceId}"] && 
+            settings["editMAC_${deviceId}"]) {
+            
+            def newName = settings["editName_${deviceId}"]
+            def newMAC = settings["editMAC_${deviceId}"]
+            def newGPSID = settings["editGPSID_${deviceId}"] ?: ""
+            
+            log.info "Updating device: ${device.displayName} -> ${newName}"
+            
+            // Update device label/name
+            device.setLabel(newName)
+            device.setName(newName)
+            
+            // Update device data
+            device.updateDataValue("mac", newMAC)
+            device.updateDataValue("gpsId", newGPSID)
+            
+            // Clear edit mode
+            app.updateSetting("edit_${deviceId}", false)
+            app.removeSetting("editName_${deviceId}")
+            app.removeSetting("editMAC_${deviceId}")
+            app.removeSetting("editGPSID_${deviceId}")
+        }
+    }
 }
 
 def logDebug(msg) {
