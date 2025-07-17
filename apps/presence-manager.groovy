@@ -49,13 +49,18 @@ def mainPage() {
 def devicesPage() {
     dynamicPage(name: "devicesPage", title: "Presence Devices") {
         section("Add New Device") {
-            input "newDeviceName", "text", title: "Device Name", submitOnChange: true
-            input "newDeviceMAC", "text", title: "WiFi MAC Address", submitOnChange: true
-            input "newDeviceGPSID", "text", title: "GPS Device ID", submitOnChange: true
+            input "newDeviceName", "text", title: "Device Name (예: John's Phone)", submitOnChange: true
+            input "newDeviceMAC", "text", title: "WiFi MAC Address (예: AA:BB:CC:DD:EE:FF)", submitOnChange: true
+            input "newDeviceGPSID", "text", title: "GPS Device ID (예: phone1, iphone_john)", submitOnChange: true
             
             if (newDeviceName && newDeviceMAC) {
-                paragraph "Device will be created when you press Done"
+                paragraph "✓ Device will be created when you press Done"
             }
+            
+            paragraph "<b>형식 안내:</b>"
+            paragraph "• Device Name: 기기를 식별할 이름"
+            paragraph "• MAC Address: 콜론(:) 구분, 대소문자 무관"
+            paragraph "• GPS Device ID: 영문/숫자, 공백 없이 입력"
         }
         
         section("Existing Devices") {
@@ -73,13 +78,13 @@ def anyoneAwayPage() {
     dynamicPage(name: "anyoneAwayPage", title: "Anyone & Away Settings") {
         section("Anyone Home Device") {
             paragraph "Automatically created virtual device that shows 'present' when ANY individual device is present"
-            input "anyoneDeviceName", "text", title: "Anyone Device Name", 
+            input "anyoneDeviceName", "text", title: "Anyone Device Name (예: Anyone Home, 가족 재실)", 
                 defaultValue: "Anyone Home", required: true
         }
         
         section("Away Delay Device") {
             paragraph "Virtual device that delays 'not present' status to prevent false departures"
-            input "awayDeviceName", "text", title: "Away Device Name", 
+            input "awayDeviceName", "text", title: "Away Device Name (예: Away Status, 외출 상태)", 
                 defaultValue: "Away Status", required: true
             input "awayDelay", "number", title: "Away Delay (minutes)", 
                 defaultValue: 60, required: true, range: "1..360"
@@ -99,10 +104,10 @@ def anyoneAwayPage() {
 def mqttPage() {
     dynamicPage(name: "mqttPage", title: "MQTT Settings") {
         section("MQTT Broker") {
-            input "mqttBroker", "text", title: "MQTT Broker IP", required: false
+            input "mqttBroker", "text", title: "MQTT Broker IP (예: 192.168.1.100)", required: false
             input "mqttPort", "number", title: "MQTT Port", defaultValue: 1883, required: false
-            input "mqttUsername", "text", title: "MQTT Username", required: false
-            input "mqttPassword", "password", title: "MQTT Password", required: false
+            input "mqttUsername", "text", title: "MQTT Username (선택사항)", required: false
+            input "mqttPassword", "password", title: "MQTT Password (선택사항)", required: false
         }
         
         section("Topics") {
@@ -119,6 +124,12 @@ def webhookPage() {
             paragraph "Configure your GPS app to send webhooks to:"
             paragraph "<b>${getFullApiServerUrl()}/gps/[deviceId]/[action]</b>"
             paragraph "Where [action] is 'enter' or 'exit'"
+            paragraph ""
+            paragraph "<b>예시:</b>"
+            paragraph "• Enter: ${getFullApiServerUrl()}/gps/phone1/enter"
+            paragraph "• Exit: ${getFullApiServerUrl()}/gps/phone1/exit"
+            paragraph ""
+            paragraph "<b>지원 앱:</b> Tasker, Shortcuts, IFTTT"
         }
     }
 }
