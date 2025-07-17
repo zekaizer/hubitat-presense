@@ -34,9 +34,9 @@ def mainPage() {
                 description: "Configure Anyone Home and Away delay"
         }
         section("Integrations") {
-            def mqttStatus = settings.mqttBroker ? "✓ 설정됨" : "❌ 필수 설정"
-            href "mqttPage", title: "MQTT Settings (필수)", description: "WiFi 감지용 MQTT 브로커 설정 - ${mqttStatus}"
-            href "webhookPage", title: "Webhook Settings", description: "GPS 지오펜싱 웹훅 설정"
+            def mqttStatus = settings.mqttBroker ? "✓ Configured" : "❌ Required"
+            href "mqttPage", title: "MQTT Settings (Required)", description: "Configure MQTT broker for WiFi detection - ${mqttStatus}"
+            href "webhookPage", title: "Webhook Settings", description: "Configure GPS geofencing webhooks"
         }
         section("Current Status") {
             paragraph getStatusSummary()
@@ -50,18 +50,18 @@ def mainPage() {
 def devicesPage() {
     dynamicPage(name: "devicesPage", title: "Presence Devices") {
         section("Add New Device") {
-            input "newDeviceName", "text", title: "Device Name (예: John's Phone)", submitOnChange: true
-            input "newDeviceMAC", "text", title: "WiFi MAC Address (예: AA:BB:CC:DD:EE:FF)", submitOnChange: true
-            input "newDeviceGPSID", "text", title: "GPS Device ID (예: phone1, iphone_john)", submitOnChange: true
+            input "newDeviceName", "text", title: "Device Name (e.g., John's Phone)", submitOnChange: true
+            input "newDeviceMAC", "text", title: "WiFi MAC Address (e.g., AA:BB:CC:DD:EE:FF)", submitOnChange: true
+            input "newDeviceGPSID", "text", title: "GPS Device ID (e.g., phone1, iphone_john)", submitOnChange: true
             
             if (newDeviceName && newDeviceMAC) {
                 paragraph "✓ Device will be created when you press Done"
             }
             
-            paragraph "<b>형식 안내:</b>"
-            paragraph "• Device Name: 기기를 식별할 이름"
-            paragraph "• MAC Address: 콜론(:) 구분, 대소문자 무관"
-            paragraph "• GPS Device ID: 영문/숫자, 공백 없이 입력"
+            paragraph "<b>Format Guide:</b>"
+            paragraph "• Device Name: Descriptive name for identification"
+            paragraph "• MAC Address: Colon-separated format, case insensitive"
+            paragraph "• GPS Device ID: Alphanumeric characters, no spaces"
         }
         
         section("Existing Devices") {
@@ -70,7 +70,7 @@ def devicesPage() {
             }
             
             if (devices.size() == 0) {
-                paragraph "생성된 디바이스가 없습니다."
+                paragraph "No devices created yet."
             } else {
                 devices.each { device ->
                     def deviceId = device.deviceNetworkId
@@ -78,24 +78,24 @@ def devicesPage() {
                     
                     if (isEditing) {
                         // Edit mode
-                        input "edit_${deviceId}", "bool", title: "편집 모드", defaultValue: true, submitOnChange: true
+                        input "edit_${deviceId}", "bool", title: "Edit Mode", defaultValue: true, submitOnChange: true
                         input "editName_${deviceId}", "text", title: "Device Name", 
                             defaultValue: device.displayName, submitOnChange: true
-                        input "editMAC_${deviceId}", "text", title: "WiFi MAC Address (예: AA:BB:CC:DD:EE:FF)", 
+                        input "editMAC_${deviceId}", "text", title: "WiFi MAC Address (e.g., AA:BB:CC:DD:EE:FF)", 
                             defaultValue: device.data?.mac ?: "", submitOnChange: true
-                        input "editGPSID_${deviceId}", "text", title: "GPS Device ID (예: phone1, iphone_john)", 
+                        input "editGPSID_${deviceId}", "text", title: "GPS Device ID (e.g., phone1, iphone_john)", 
                             defaultValue: device.data?.gpsId ?: "", submitOnChange: true
                         
                         if (settings["editName_${deviceId}"] && settings["editMAC_${deviceId}"]) {
-                            paragraph "✓ 변경사항이 저장됩니다"
+                            paragraph "✓ Changes will be saved"
                         }
                     } else {
                         // View mode
-                        def mac = device.data?.mac ?: "설정되지 않음"
-                        def gpsId = device.data?.gpsId ?: "설정되지 않음"
+                        def mac = device.data?.mac ?: "Not configured"
+                        def gpsId = device.data?.gpsId ?: "Not configured"
                         paragraph "<b>${device.displayName}</b><br>MAC: ${mac}<br>GPS ID: ${gpsId}"
-                        input "edit_${deviceId}", "bool", title: "편집", defaultValue: false, submitOnChange: true
-                        input "delete_${deviceId}", "bool", title: "삭제", defaultValue: false, submitOnChange: true
+                        input "edit_${deviceId}", "bool", title: "Edit", defaultValue: false, submitOnChange: true
+                        input "delete_${deviceId}", "bool", title: "Delete", defaultValue: false, submitOnChange: true
                     }
                     paragraph "―――――――――――――――――――――――――"
                 }
@@ -108,13 +108,13 @@ def anyoneAwayPage() {
     dynamicPage(name: "anyoneAwayPage", title: "Anyone & Away Settings") {
         section("Anyone Home Device") {
             paragraph "Automatically created virtual device that shows 'present' when ANY individual device is present"
-            input "anyoneDeviceName", "text", title: "Anyone Device Name (예: Anyone Home, 가족 재실)", 
+            input "anyoneDeviceName", "text", title: "Anyone Device Name (e.g., Anyone Home, Family Present)", 
                 defaultValue: "Anyone Home", required: true
         }
         
         section("Away Delay Device") {
             paragraph "Virtual device that delays 'not present' status to prevent false departures"
-            input "awayDeviceName", "text", title: "Away Device Name (예: Away Status, 외출 상태)", 
+            input "awayDeviceName", "text", title: "Away Device Name (e.g., Away Status, Departure Status)", 
                 defaultValue: "Away Status", required: true
             input "awayDelay", "number", title: "Away Delay (minutes)", 
                 defaultValue: 60, required: true, range: "1..360"
@@ -132,16 +132,16 @@ def anyoneAwayPage() {
 }
 
 def mqttPage() {
-    dynamicPage(name: "mqttPage", title: "MQTT Settings (필수)") {
-        section("MQTT Broker 설정") {
-            paragraph "<b>WiFi 감지를 위해 MQTT 브로커 설정이 필요합니다.</b>"
-            input "mqttBroker", "text", title: "MQTT Broker IP (예: 192.168.1.100)", required: true
+    dynamicPage(name: "mqttPage", title: "MQTT Settings (Required)") {
+        section("MQTT Broker Configuration") {
+            paragraph "<b>MQTT broker configuration is required for WiFi detection.</b>"
+            input "mqttBroker", "text", title: "MQTT Broker IP (e.g., 192.168.1.100)", required: true
             input "mqttPort", "number", title: "MQTT Port", defaultValue: 1883, required: true
-            input "mqttUsername", "text", title: "MQTT Username (선택사항)", required: false
-            input "mqttPassword", "password", title: "MQTT Password (선택사항)", required: false
+            input "mqttUsername", "text", title: "MQTT Username (optional)", required: false
+            input "mqttPassword", "password", title: "MQTT Password (optional)", required: false
             
             if (!settings.mqttBroker) {
-                paragraph "<div style='color: red;'><b>⚠️ MQTT 브로커 IP가 필요합니다. WiFi 감지 기능이 비활성화됩니다.</b></div>"
+                paragraph "<div style='color: red;'><b>⚠️ MQTT broker IP is required. WiFi detection will be disabled.</b></div>"
             }
         }
         
@@ -150,7 +150,7 @@ def mqttPage() {
             paragraph "• AsusAC68U/status/mac-+/lastseen/epoch"
             paragraph "• UnifiU6Pro/status/mac-+/lastseen/epoch"
             paragraph ""
-            paragraph "<b>MAC 형식:</b> mac-aa-bb-cc-dd-ee-ff"
+            paragraph "<b>MAC Format:</b> mac-aa-bb-cc-dd-ee-ff"
         }
     }
 }
@@ -162,11 +162,11 @@ def webhookPage() {
             paragraph "<b>${getFullApiServerUrl()}/gps/[deviceId]/[action]</b>"
             paragraph "Where [action] is 'enter' or 'exit'"
             paragraph ""
-            paragraph "<b>예시:</b>"
+            paragraph "<b>Examples:</b>"
             paragraph "• Enter: ${getFullApiServerUrl()}/gps/phone1/enter"
             paragraph "• Exit: ${getFullApiServerUrl()}/gps/phone1/exit"
             paragraph ""
-            paragraph "<b>지원 앱:</b> Tasker, Shortcuts, IFTTT"
+            paragraph "<b>Supported Apps:</b> Tasker, Shortcuts, IFTTT"
         }
     }
 }
@@ -435,12 +435,12 @@ def getStatusSummary() {
         summary += "• Messages received: ${messageCount}<br>"
         
         if (connectionStatus != "connected") {
-            summary += "• <span style='color: red;'>⚠️ WiFi 감지 기능이 비활성화됨</span><br>"
+            summary += "• <span style='color: red;'>⚠️ WiFi detection disabled</span><br>"
         }
     } else if (settings.mqttBroker) {
-        summary += "• <span style='color: orange;'>MQTT 클라이언트 생성 중...</span><br>"
+        summary += "• <span style='color: orange;'>Creating MQTT client...</span><br>"
     } else {
-        summary += "• <span style='color: red;'>MQTT 브로커가 설정되지 않음</span><br>"
+        summary += "• <span style='color: red;'>MQTT broker not configured</span><br>"
     }
     
     return summary
