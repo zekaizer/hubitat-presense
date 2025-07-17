@@ -4,6 +4,10 @@
 deployment/
 *.deployment
 
+# HPM package files
+hpm-package/
+*.hpm-package
+
 # Backup files
 backups/
 *.backup
@@ -62,6 +66,7 @@ hubitat-config.json
 # Build artifacts
 build/
 dist/
+releases/
 
 # Lock files (if using package managers)
 package-lock.json

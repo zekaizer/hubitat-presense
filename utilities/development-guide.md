@@ -39,6 +39,22 @@ hubitat-presense/
 - Groovy 문법 준수
 - Hubitat 규칙 따르기
 
+### Git 관리 정책
+
+#### 추적되는 파일
+- `drivers/` - 원본 드라이버 코드
+- `apps/` - 원본 앱 코드
+- `docs/` - 문서 파일
+- `utilities/` - 개발 도구
+- `packageManifest.json` - HPM 매니페스트
+- `README.md`, `LICENSE` - 프로젝트 파일
+
+#### 무시되는 파일 (.gitignore)
+- `deployment/` - 수동 배포용 파일
+- `hpm-package/` - HPM 패키지 파일
+- `backups/` - 백업 파일
+- `releases/` - 릴리스 패키지
+
 ### 2. 코드 검증
 
 ```bash
@@ -47,9 +63,22 @@ hubitat-presense/
 
 ### 3. 배포 준비
 
+#### 수동 배포 (Manual Deployment)
 ```bash
 ./utilities/deployment-helper.sh prepare
 ```
+
+#### HPM 배포 (HPM Deployment)
+```bash
+./utilities/deployment-helper.sh hpm-prepare
+```
+
+#### 완전한 릴리스 (Complete Release)
+```bash
+./utilities/deployment-helper.sh release
+```
+
+**참고**: 생성된 `deployment/`, `hpm-package/`, `releases/` 디렉토리는 Git에서 자동으로 무시됩니다.
 
 ### 4. Hubitat 허브에 배포
 

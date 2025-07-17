@@ -23,6 +23,9 @@ usage() {
     echo "  validate     - Validate Groovy syntax"
     echo "  prepare      - Prepare code for deployment"
     echo "  backup       - Create backup of current deployment"
+    echo "  hpm-validate - Validate HPM manifest file"
+    echo "  hpm-prepare  - Prepare HPM package for distribution"
+    echo "  release      - Create GitHub release package"
     echo "  help         - Show this help message"
     echo ""
     echo "Options:"
@@ -172,6 +175,184 @@ create_backup() {
     log_info "Backup created at $BACKUP_DIR"
 }
 
+validate_hpm_manifest() {
+    log_info "Validating HPM manifest..."
+    
+    if [ ! -f "packageManifest.json" ]; then
+        log_error "packageManifest.json not found"
+        return 1
+    fi
+    
+    # Check if jq is installed
+    if ! command -v jq &> /dev/null; then
+        log_warn "jq not found. Install with: brew install jq"
+        log_info "Performing basic JSON validation..."
+        
+        # Basic JSON validation
+        if python3 -m json.tool packageManifest.json > /dev/null 2>&1; then
+            log_info "✓ JSON syntax is valid"
+        else
+            log_error "✗ JSON syntax is invalid"
+            return 1
+        fi
+    else
+        # Detailed validation with jq
+        log_info "Validating JSON structure..."
+        
+        # Check required fields
+        REQUIRED_FIELDS="packageName author version apps drivers"
+        for field in $REQUIRED_FIELDS; do
+            if jq -e ".$field" packageManifest.json > /dev/null 2>&1; then
+                log_info "✓ Required field '$field' present"
+            else
+                log_error "✗ Required field '$field' missing"
+                return 1
+            fi
+        done
+        
+        # Check apps array
+        APP_COUNT=$(jq '.apps | length' packageManifest.json)
+        log_info "✓ Found $APP_COUNT app(s)"
+        
+        # Check drivers array
+        DRIVER_COUNT=$(jq '.drivers | length' packageManifest.json)
+        log_info "✓ Found $DRIVER_COUNT driver(s)"
+        
+        # Validate URLs (basic check)
+        jq -r '.apps[].location, .drivers[].location' packageManifest.json | while read url; do
+            if [[ $url =~ ^https?:// ]]; then
+                log_info "✓ Valid URL format: $url"
+            else
+                log_error "✗ Invalid URL format: $url"
+            fi
+        done
+    fi
+    
+    log_info "HPM manifest validation completed!"
+}
+
+prepare_hpm_package() {
+    log_info "Preparing HPM package..."
+    
+    # Validate manifest first
+    validate_hpm_manifest || return 1
+    
+    # Create HPM package directory
+    mkdir -p "./hpm-package"
+    
+    # Copy required files
+    cp "packageManifest.json" "./hpm-package/"
+    cp "LICENSE" "./hpm-package/"
+    cp "README.md" "./hpm-package/"
+    
+    # Copy drivers and apps
+    cp -r "$DRIVERS_DIR" "./hpm-package/"
+    cp -r "$APPS_DIR" "./hpm-package/"
+    
+    # Copy documentation
+    cp -r "docs/" "./hpm-package/"
+    
+    # Create package info
+    cat > "./hpm-package/PACKAGE_INFO.md" << EOF
+# HPM Package Information
+
+Generated: $(date)
+
+## Package Contents
+
+### Drivers
+$(ls "$DRIVERS_DIR"/*.groovy | sed 's|.*drivers/|- |')
+
+### Apps
+$(ls "$APPS_DIR"/*.groovy | sed 's|.*apps/|- |')
+
+### Documentation
+- README.md
+- docs/hpm-installation.md
+- docs/system-architecture.md
+- docs/data-flow.md
+- docs/api-reference.md
+- docs/integration-guide.md
+
+## Installation
+
+### Via HPM
+1. Install Hubitat Package Manager
+2. Search for "WiFi GPS Hybrid Presence"
+3. Click Install
+
+### Manual Installation
+See deployment/ directory for prepared files.
+
+EOF
+    
+    log_info "HPM package ready in ./hpm-package/"
+}
+
+create_release_package() {
+    log_info "Creating GitHub release package..."
+    
+    # Validate code first
+    validate_groovy || return 1
+    validate_hpm_manifest || return 1
+    
+    # Create release directory
+    RELEASE_DIR="./releases/$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$RELEASE_DIR"
+    
+    # Prepare deployment files
+    prepare_deployment
+    
+    # Prepare HPM package
+    prepare_hpm_package
+    
+    # Copy everything to release directory
+    cp -r "./deployment" "$RELEASE_DIR/"
+    cp -r "./hpm-package" "$RELEASE_DIR/"
+    
+    # Create release notes
+    cat > "$RELEASE_DIR/RELEASE_NOTES.md" << EOF
+# Release Notes
+
+Version: $(jq -r '.version' packageManifest.json)
+Date: $(date)
+
+## Changes
+- Updated WiFi priority logic
+- GPS timeout logic removed
+- Improved documentation
+- Added HPM support
+
+## Installation Options
+
+### Option 1: HPM (Recommended)
+1. Install via Hubitat Package Manager
+2. Search for "WiFi GPS Hybrid Presence"
+3. Click Install
+
+### Option 2: Manual Installation
+1. Use files in deployment/ directory
+2. Follow README.md instructions
+
+## Files Included
+- packageManifest.json (HPM manifest)
+- deployment/ (Manual installation files)
+- hpm-package/ (HPM package files)
+- LICENSE
+- README.md
+- docs/ (Complete documentation)
+
+EOF
+    
+    # Create ZIP package
+    cd "$RELEASE_DIR"
+    zip -r "../hubitat-presence-$(jq -r '.version' ../../packageManifest.json).zip" . > /dev/null 2>&1
+    cd - > /dev/null
+    
+    log_info "Release package created at $RELEASE_DIR"
+    log_info "ZIP package created at ./releases/hubitat-presence-$(jq -r '.version' packageManifest.json).zip"
+}
+
 main() {
     case "$1" in
         "validate")
@@ -182,6 +363,15 @@ main() {
             ;;
         "backup")
             create_backup
+            ;;
+        "hpm-validate")
+            validate_hpm_manifest
+            ;;
+        "hpm-prepare")
+            prepare_hpm_package
+            ;;
+        "release")
+            create_release_package
             ;;
         "help"|"-h"|"--help")
             usage

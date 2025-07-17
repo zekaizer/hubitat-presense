@@ -12,21 +12,22 @@ Accurate presence detection system combining WiFi and GPS data.
 
 ## Quick Start
 
-### 1. Validate Code
-```bash
-./utilities/deployment-helper.sh validate
-```
+### Option 1: HPM Installation (Recommended)
+1. Install [Hubitat Package Manager (HPM)](https://github.com/HubitatCommunity/hubitatpackagemanager)
+2. Open HPM and search for "WiFi GPS Hybrid Presence"
+3. Click "Install" and follow prompts
+4. Configure app instance
 
-### 2. Prepare Deployment
-```bash
-./utilities/deployment-helper.sh prepare
-```
+### Option 2: Manual Installation
+1. Validate code: `./utilities/deployment-helper.sh validate`
+2. Prepare deployment: `./utilities/deployment-helper.sh prepare`
+3. Install on Hubitat Hub:
+   - Access Hubitat web interface
+   - Install drivers in Developer Tools > Drivers Code
+   - Install app in Developer Tools > Apps Code
+   - Configure in Apps > Add User App
 
-### 3. Install on Hubitat Hub
-1. Access Hubitat web interface
-2. Install drivers in Developer Tools > Drivers Code
-3. Install app in Developer Tools > Apps Code
-4. Configure in Apps > Add User App
+**📖 See [HPM Installation Guide](docs/hpm-installation.md) for detailed instructions**
 
 ## System Components
 
