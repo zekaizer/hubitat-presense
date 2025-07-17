@@ -66,10 +66,25 @@ def initialize() {
 }
 
 // WiFi Detection Methods
-def wifiDetected() {
-    logInfo "${deviceName} WiFi detected"
+def wifiDetected(epochTime = null) {
+    def name = deviceName ?: device.displayName ?: "Device"
+    logInfo "${name} WiFi detected"
     
-    state.wifiLastSeen = now()
+    // Use provided epoch time or current time
+    if (epochTime) {
+        try {
+            def epochLong = epochTime.toString().toLong()
+            state.wifiLastEpoch = epochLong
+            state.wifiLastSeen = epochLong * 1000  // Convert to milliseconds
+            logDebug "Using epoch time: ${epochLong}"
+        } catch (Exception e) {
+            state.wifiLastSeen = now()
+            logDebug "Failed to parse epoch time, using current time"
+        }
+    } else {
+        state.wifiLastSeen = now()
+    }
+    
     sendEvent(name: "wifiStatus", value: "connected")
     sendEvent(name: "lastWifiSeen", value: new Date().format("yyyy-MM-dd HH:mm:ss"))
     
@@ -86,16 +101,22 @@ def wifiDetected() {
 }
 
 def wifiLost() {
-    logInfo "${deviceName} WiFi lost"
+    def name = deviceName ?: device.displayName ?: "Device"
+    logInfo "${name} WiFi lost"
+    
+    // Update last seen time to current to start timeout from now
+    state.wifiLastSeen = now()
     sendEvent(name: "wifiStatus", value: "disconnected")
     
     // Don't immediately mark as away - wait for GPS confirmation
     runIn(wifiTimeout, checkDeparture)
+    logDebug "Will check departure in ${wifiTimeout} seconds"
 }
 
 // GPS Methods
 def gpsEntered() {
-    logInfo "${deviceName} entered GPS geofence"
+    def name = deviceName ?: device.displayName ?: "Device"
+    logInfo "${name} entered GPS geofence"
     
     state.gpsInside = true
     state.gpsLastChange = now()
@@ -107,7 +128,8 @@ def gpsEntered() {
 }
 
 def gpsExited() {
-    logInfo "${deviceName} exited GPS geofence"
+    def name = deviceName ?: device.displayName ?: "Device"
+    logInfo "${name} exited GPS geofence"
     
     state.gpsInside = false
     state.gpsLastChange = now()
@@ -121,7 +143,8 @@ def gpsExited() {
 // Presence State Management
 def markAsPresent(method) {
     if (device.currentValue("presence") != "present") {
-        logInfo "${deviceName} arrived via ${method}"
+        def name = deviceName ?: device.displayName ?: "Device"
+        logInfo "${name} arrived via ${method}"
         sendEvent(name: "presence", value: "present", descriptionText: "${deviceName} has arrived")
         sendEvent(name: "method", value: method)
         sendEvent(name: "confidence", value: calculateConfidence())
@@ -135,7 +158,8 @@ def markAsPresent(method) {
 
 def markAsNotPresent(method) {
     if (device.currentValue("presence") != "not present") {
-        logInfo "${deviceName} departed via ${method}"
+        def name = deviceName ?: device.displayName ?: "Device"
+        logInfo "${name} departed via ${method}"
         sendEvent(name: "presence", value: "not present", descriptionText: "${deviceName} has left")
         sendEvent(name: "method", value: method)
         sendEvent(name: "confidence", value: calculateConfidence())

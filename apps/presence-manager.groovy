@@ -602,7 +602,7 @@ def wifiDeviceDetected(mac, timestamp) {
     def device = findDeviceByMac(mac)
     if (device) {
         log.info "WiFi connection for ${device.displayName} (${mac})"
-        device.wifiDetected()
+        device.wifiDetected(timestamp)
     } else {
         logDebug "No matching device found for MAC: ${mac}"
     }

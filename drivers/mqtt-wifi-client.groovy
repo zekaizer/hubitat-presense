@@ -35,6 +35,9 @@ metadata {
 def installed() {
     log.info "Installing MQTT WiFi Client"
     initialize()
+    
+    // Ensure timeout checker is started after installation
+    runIn(5, startTimeoutChecker)
 }
 
 def updated() {
@@ -58,6 +61,10 @@ def updated() {
         runIn(3, connect)
         logInfo "Forced reconnection scheduled for subscription update"
     }
+    
+    // Restart timeout checker after configuration update
+    runIn(5, checkWifiTimeoutsAndReschedule)
+    logDebug "WiFi timeout checker restarted"
 }
 
 def initialize() {
@@ -81,8 +88,9 @@ def initialize() {
         sendEvent(name: "connectionStatus", value: "disconnected")
     }
     
-    // Start timeout checker - run every 5 seconds for fast responsiveness
-    runEvery5Seconds(checkWifiTimeouts)
+    // Start timeout checker - use runIn pattern for 5 second intervals
+    runIn(5, checkWifiTimeoutsAndReschedule)
+    logDebug "WiFi timeout checker started - will check every 5 seconds"
 }
 
 def connect() {
@@ -122,7 +130,7 @@ def connect() {
         state.retryCount = (state.retryCount ?: 0) + 1
         if (state.retryCount < 5) {
             def retryDelay = Math.min(60, 10 * state.retryCount)
-            logInfo "Will retry connection in ${retryDelay} seconds"
+            logDebug "Will retry connection in ${retryDelay} seconds"
             runIn(retryDelay, connect)
         }
     }
@@ -165,7 +173,7 @@ def mqttClientStatus(String status) {
         state.retryCount = (state.retryCount ?: 0) + 1
         if (state.retryCount < 5) {
             def retryDelay = Math.min(60, 15 * state.retryCount)
-            logInfo "Will retry connection in ${retryDelay} seconds (retry ${state.retryCount}/5)"
+            logDebug "Will retry connection in ${retryDelay} seconds (retry ${state.retryCount}/5)"
             runIn(retryDelay, connect)
         } else {
             log.error "Maximum retry attempts reached. Please check MQTT broker settings."
@@ -291,14 +299,29 @@ def processWifiMessage(mac, payload) {
     // Ensure state maps are initialized
     if (!state.deviceStates) state.deviceStates = [:]
     if (!state.lastMessageTime) state.lastMessageTime = [:]
+    if (!state.lastEpochTime) state.lastEpochTime = [:]
+    
+    // Normalize MAC to colon format for consistency
+    mac = mac.toLowerCase().replaceAll(/[-_]/, ':')
     
     def lastState = state.deviceStates[mac]
+    logDebug "Processing WiFi message for MAC: ${mac}, Last State: ${lastState}, Payload: ${payload}"
     
-    // Update message tracking
+    // Always update message tracking for every message received
     state.lastMessageTime[mac] = currentTime
+    
+    // Store epoch timestamp from payload (in seconds)
+    try {
+        def epochTime = payload.toLong()
+        state.lastEpochTime[mac] = epochTime
+        logDebug "Updated epoch time for ${mac}: ${epochTime}"
+    } catch (Exception e) {
+        logDebug "Failed to parse epoch time from payload: ${payload}"
+    }
+    
     state.messageCount = (state.messageCount ?: 0) + 1
     
-    // Only process if this is a new connection (state change)
+    // Process new connection (state change)
     if (lastState != "connected") {
         logInfo "WiFi device connected: ${mac}"
         state.deviceStates[mac] = "connected"
@@ -311,12 +334,15 @@ def processWifiMessage(mac, payload) {
         }
         
         updateDeviceCount()
+    } else {
+        // Device already connected - just update timestamp
+        logDebug "WiFi keepalive for ${mac} at ${new Date()}"
     }
     
     // Update stats every 10 messages to reduce events
     if (state.messageCount % 10 == 0) {
-        sendEvent(name: "messageCount", value: state.messageCount)
-        sendEvent(name: "lastMessage", value: "${mac}: ${payload}")
+    sendEvent(name: "messageCount", value: state.messageCount)
+    sendEvent(name: "lastMessage", value: "${mac}: ${payload}")
     }
 }
 
@@ -359,22 +385,39 @@ def logDebug(msg) {
 
 // WiFi timeout checker
 def checkWifiTimeouts() {
+    // Log function call for debugging
+    logDebug "checkWifiTimeouts() called at ${new Date()}"
+    
     // Ensure state maps are initialized
     if (!state.deviceStates) state.deviceStates = [:]
     if (!state.lastMessageTime) state.lastMessageTime = [:]
+    if (!state.lastEpochTime) state.lastEpochTime = [:]
     
     def currentTime = now()
-    def timeoutMs = (wifiTimeout ?: 60) * 1000
+    def currentEpochSeconds = currentTime / 1000
+    def timeoutSeconds = wifiTimeout ?: 15
     def timedOutDevices = []
     
-    state.lastMessageTime.each { mac, lastTime ->
-        if (state.deviceStates[mac] == "connected" && (currentTime - lastTime) > timeoutMs) {
-            timedOutDevices << mac
+    logDebug "Checking WiFi timeouts - Current epoch: ${currentEpochSeconds}, Timeout: ${timeoutSeconds}s"
+    
+    state.lastEpochTime.each { mac, lastEpochTime ->
+        def deviceState = state.deviceStates[mac]
+        if (deviceState == "connected" && lastEpochTime) {
+            def timeDiffSeconds = currentEpochSeconds - lastEpochTime
+            
+            logDebug "MAC: ${mac}, State: ${deviceState}, Last epoch: ${lastEpochTime}, Diff: ${timeDiffSeconds}s"
+            
+            if (timeDiffSeconds > timeoutSeconds) {
+                timedOutDevices << mac
+                logDebug "WiFi device will timeout: ${mac} (${timeDiffSeconds}s > ${timeoutSeconds}s)"
+            }
         }
     }
     
     timedOutDevices.each { mac ->
-        logInfo "WiFi device timed out: ${mac}"
+        def lastTime = state.lastMessageTime[mac]
+        def timeDiff = currentTime - lastTime
+        logInfo "WiFi device timed out: ${mac} (last seen: ${timeDiff}ms ago)"
         state.deviceStates[mac] = "disconnected"
         
         // Forward timeout to parent app
@@ -385,6 +428,7 @@ def checkWifiTimeouts() {
     
     if (timedOutDevices.size() > 0) {
         updateDeviceCount()
+        logDebug "Updated device count after ${timedOutDevices.size()} timeouts"
     }
 }
 
@@ -395,6 +439,27 @@ def updateDeviceCount() {
     def connectedCount = state.deviceStates.count { it.value == "connected" }
     sendEvent(name: "trackedDevices", value: connectedCount)
     logDebug "Connected devices: ${connectedCount}"
+}
+
+def startTimeoutChecker() {
+    logDebug "Starting/restarting timeout checker"
+    
+    // Clear any existing schedules first
+    unschedule(checkWifiTimeouts)
+    unschedule(checkWifiTimeoutsAndReschedule)
+    
+    // Use runIn pattern since runEvery5Seconds doesn't exist in Hubitat
+    runIn(5, checkWifiTimeoutsAndReschedule)
+    logInfo "Timeout checker scheduled using runIn method (every 5 seconds)"
+}
+
+
+def checkWifiTimeoutsAndReschedule() {
+    // Call the timeout check function
+    checkWifiTimeouts()
+    
+    // Schedule next run in 5 seconds
+    runIn(5, checkWifiTimeoutsAndReschedule)
 }
 
 def logInfo(msg) {
