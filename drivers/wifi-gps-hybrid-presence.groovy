@@ -102,10 +102,8 @@ def gpsEntered() {
     sendEvent(name: "gpsStatus", value: "inside")
     sendEvent(name: "lastGpsUpdate", value: new Date().format("yyyy-MM-dd HH:mm:ss"))
     
-    // GPS entry alone doesn't trigger arrival - wait for WiFi
-    if (device.currentValue("presence") != "present") {
-        logDebug "GPS entered but waiting for WiFi confirmation"
-    }
+    // GPS entry is informational only - WiFi handles arrival
+    logDebug "GPS entered - informational only, WiFi will handle arrival"
 }
 
 def gpsExited() {
@@ -116,8 +114,8 @@ def gpsExited() {
     sendEvent(name: "gpsStatus", value: "outside")
     sendEvent(name: "lastGpsUpdate", value: new Date().format("yyyy-MM-dd HH:mm:ss"))
     
-    // Schedule departure check after delay
-    runIn(gpsExitDelay, checkDeparture)
+    // Check departure immediately - WiFi priority will be handled in checkDeparture
+    checkDeparture()
 }
 
 // Presence State Management
@@ -130,11 +128,8 @@ def markAsPresent(method) {
         state.presence = "present"
         state.pendingArrival = false
         
-        // Also update GPS state to prevent immediate departure
-        if (!state.gpsInside) {
-            state.gpsInside = true
-            sendEvent(name: "gpsStatus", value: "inside")
-        }
+        // Note: GPS state is not automatically updated on WiFi arrival
+        // GPS state remains as last reported by GPS events
     }
 }
 
@@ -159,13 +154,18 @@ def confirmArrival() {
 def checkDeparture() {
     def wifiRecent = isWifiRecent()
     def gpsOutside = !state.gpsInside
-    def gpsExitConfirmed = (now() - state.gpsLastChange) > (gpsExitDelay * 1000)
     
-    logDebug "Departure check - WiFi recent: ${wifiRecent}, GPS outside: ${gpsOutside}, GPS confirmed: ${gpsExitConfirmed}"
+    logDebug "Departure check - WiFi recent: ${wifiRecent}, GPS outside: ${gpsOutside}"
     
-    // Require both GPS exit and WiFi timeout for departure
-    if (gpsOutside && gpsExitConfirmed && !wifiRecent) {
-        markAsNotPresent("gps+wifi")
+    // WiFi has priority - if WiFi is connected, ignore GPS exit
+    if (wifiRecent) {
+        logDebug "WiFi still connected, ignoring GPS exit"
+        return
+    }
+    
+    // Only depart if WiFi timeout AND GPS outside
+    if (!wifiRecent && gpsOutside) {
+        markAsNotPresent("wifi-timeout")
     }
 }
 
@@ -181,15 +181,18 @@ def checkPresenceState() {
     
     // Calculate new presence state
     if (currentPresence == "present") {
-        // For departure: need GPS outside + WiFi timeout
-        if (!gpsInside && !wifiRecent) {
-            def timeSinceGpsExit = (now() - state.gpsLastChange) / 1000
-            if (timeSinceGpsExit > gpsExitDelay) {
-                markAsNotPresent("timeout")
+        // For departure: WiFi has priority
+        if (wifiRecent) {
+            // WiFi connected, remain present regardless of GPS
+            logDebug "WiFi connected, maintaining present status"
+        } else {
+            // WiFi timeout - check GPS status
+            if (!gpsInside) {
+                markAsNotPresent("wifi-timeout")
             }
         }
     } else {
-        // For arrival: WiFi is sufficient
+        // For arrival: WiFi is sufficient (no GPS entry required)
         if (wifiRecent) {
             markAsPresent("wifi-check")
         }
