@@ -11,6 +11,7 @@ metadata {
         attribute "connectionStatus", "enum", ["connected", "disconnected", "error"]
         attribute "lastMessage", "string"
         attribute "messageCount", "number"
+        attribute "trackedDevices", "number"
         
         command "connect"
         command "disconnect"
@@ -24,6 +25,7 @@ metadata {
         input "mqttPassword", "password", title: "MQTT Password (optional)", required: false
         input "enableDebug", "bool", title: "Enable Debug Logging", defaultValue: true
         input "enableInfo", "bool", title: "Enable Info Logging", defaultValue: true
+        input "wifiTimeout", "number", title: "WiFi Timeout (seconds)", defaultValue: 180, required: true, range: "30..600"
     }
 }
 
@@ -58,8 +60,12 @@ def updated() {
 def initialize() {
     state.messageCount = 0
     state.retryCount = 0
+    state.lastMessageTime = [:]
+    state.deviceStates = [:]
+    
     sendEvent(name: "connectionStatus", value: "disconnected")
     sendEvent(name: "messageCount", value: 0)
+    sendEvent(name: "trackedDevices", value: 0)
     
     logInfo "Initializing MQTT WiFi Client"
     
@@ -70,6 +76,9 @@ def initialize() {
         logInfo "No MQTT broker configured - waiting for settings"
         sendEvent(name: "connectionStatus", value: "disconnected")
     }
+    
+    // Start timeout checker
+    runEvery1Minute(checkWifiTimeouts)
 }
 
 def connect() {
@@ -202,26 +211,55 @@ def parse(String description) {
         
         logDebug "MQTT message received - Topic: ${topic}, Payload: ${payload}"
         
-        // Update last message info
-        sendEvent(name: "lastMessage", value: "${topic}: ${payload}")
-        state.messageCount = (state.messageCount ?: 0) + 1
-        sendEvent(name: "messageCount", value: state.messageCount)
-        
         // Extract MAC address from topic
         def mac = extractMacFromTopic(topic)
         if (mac) {
-            // Forward to parent app
-            if (parent) {
-                parent.wifiDeviceDetected(mac, payload)
-            } else {
-                logDebug "No parent app found to forward WiFi detection"
-            }
+            processWifiMessage(mac, payload)
         } else {
-            logDebug "Could not extract MAC from topic: ${topic}"
+            // logDebug "Could not extract MAC from topic: ${topic}"
         }
         
     } catch (Exception e) {
-        log.error "Error parsing MQTT message: ${e.message}"
+        // Reduce error logging to prevent spam
+        if ((state.lastErrorTime ?: 0) < (now() - 60000)) {
+            log.error "Error parsing MQTT message: ${e.message}"
+            state.lastErrorTime = now()
+        }
+    }
+}
+
+def processWifiMessage(mac, payload) {
+    def currentTime = now()
+    
+    // Ensure state maps are initialized
+    if (!state.deviceStates) state.deviceStates = [:]
+    if (!state.lastMessageTime) state.lastMessageTime = [:]
+    
+    def lastState = state.deviceStates[mac]
+    
+    // Update message tracking
+    state.lastMessageTime[mac] = currentTime
+    state.messageCount = (state.messageCount ?: 0) + 1
+    
+    // Only process if this is a new connection (state change)
+    if (lastState != "connected") {
+        logInfo "WiFi device connected: ${mac}"
+        state.deviceStates[mac] = "connected"
+        
+        // Forward to parent app only on state change
+        if (parent) {
+            parent.wifiDeviceDetected(mac, payload)
+        } else {
+            logDebug "No parent app found to forward WiFi detection"
+        }
+        
+        updateDeviceCount()
+    }
+    
+    // Update stats every 10 messages to reduce events
+    if (state.messageCount % 10 == 0) {
+        sendEvent(name: "messageCount", value: state.messageCount)
+        sendEvent(name: "lastMessage", value: "${mac}: ${payload}")
     }
 }
 
@@ -262,6 +300,46 @@ def extractMacFromTopic(topic) {
 
 def logDebug(msg) {
     if (enableDebug) log.debug "${device.displayName}: ${msg}"
+}
+
+// WiFi timeout checker
+def checkWifiTimeouts() {
+    // Ensure state maps are initialized
+    if (!state.deviceStates) state.deviceStates = [:]
+    if (!state.lastMessageTime) state.lastMessageTime = [:]
+    
+    def currentTime = now()
+    def timeoutMs = (wifiTimeout ?: 180) * 1000
+    def timedOutDevices = []
+    
+    state.lastMessageTime.each { mac, lastTime ->
+        if (state.deviceStates[mac] == "connected" && (currentTime - lastTime) > timeoutMs) {
+            timedOutDevices << mac
+        }
+    }
+    
+    timedOutDevices.each { mac ->
+        logInfo "WiFi device timed out: ${mac}"
+        state.deviceStates[mac] = "disconnected"
+        
+        // Forward timeout to parent app
+        if (parent) {
+            parent.wifiDeviceTimeout(mac)
+        }
+    }
+    
+    if (timedOutDevices.size() > 0) {
+        updateDeviceCount()
+    }
+}
+
+def updateDeviceCount() {
+    // Ensure state map is initialized
+    if (!state.deviceStates) state.deviceStates = [:]
+    
+    def connectedCount = state.deviceStates.count { it.value == "connected" }
+    sendEvent(name: "trackedDevices", value: connectedCount)
+    logDebug "Connected devices: ${connectedCount}"
 }
 
 def logInfo(msg) {

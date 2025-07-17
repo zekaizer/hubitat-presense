@@ -592,10 +592,23 @@ def wifiDeviceDetected(mac, timestamp) {
     
     def device = findDeviceByMac(mac)
     if (device) {
-        log.info "WiFi detection for ${device.displayName} (${mac})"
+        log.info "WiFi connection for ${device.displayName} (${mac})"
         device.wifiDetected()
     } else {
         logDebug "No matching device found for MAC: ${mac}"
+    }
+}
+
+// WiFi Timeout Handler (called by MQTT driver)
+def wifiDeviceTimeout(mac) {
+    logDebug "WiFi device timeout: MAC=${mac}"
+    
+    def device = findDeviceByMac(mac)
+    if (device) {
+        log.info "WiFi timeout for ${device.displayName} (${mac})"
+        device.wifiLost()
+    } else {
+        logDebug "No matching device found for timeout MAC: ${mac}"
     }
 }
 
