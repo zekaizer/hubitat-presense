@@ -1,12 +1,12 @@
 {
   "packageName": "WiFi GPS Hybrid Presence System",
   "author": "Luke Lee",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2025-01-17",
   "description": "Advanced WiFi/GPS hybrid presence detection system with WiFi priority logic, manual override, and delayed away features",
   "licenseFile": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/LICENSE",
-  "releaseNotes": "Version 1.2.0 - Added native MQTT WiFi client driver for real-time router presence detection",
+  "releaseNotes": "Version 1.2.1 - Made MQTT WiFi client required and integrated with app UI for mandatory presence detection",
   "documentationLink": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/README.md",
   "communityLink": "https://community.hubitat.com/t/wifi-gps-hybrid-presence-system/",
   "apps": [
@@ -47,7 +47,7 @@
       "name": "MQTT WiFi Client",
       "namespace": "zekaizer",
       "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/mqtt-wifi-client.groovy",
-      "required": false
+      "required": true
     }
   ],
   "tags": [

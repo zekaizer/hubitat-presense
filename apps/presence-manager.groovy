@@ -34,8 +34,9 @@ def mainPage() {
                 description: "Configure Anyone Home and Away delay"
         }
         section("Integrations") {
-            href "mqttPage", title: "MQTT Settings", description: "Configure WiFi detection via MQTT"
-            href "webhookPage", title: "Webhook Settings", description: "Configure GPS webhooks"
+            def mqttStatus = settings.mqttBroker ? "✓ 설정됨" : "❌ 필수 설정"
+            href "mqttPage", title: "MQTT Settings (필수)", description: "WiFi 감지용 MQTT 브로커 설정 - ${mqttStatus}"
+            href "webhookPage", title: "Webhook Settings", description: "GPS 지오펜싱 웹훅 설정"
         }
         section("Current Status") {
             paragraph getStatusSummary()
@@ -131,12 +132,17 @@ def anyoneAwayPage() {
 }
 
 def mqttPage() {
-    dynamicPage(name: "mqttPage", title: "MQTT Settings") {
-        section("MQTT Broker") {
-            input "mqttBroker", "text", title: "MQTT Broker IP (예: 192.168.1.100)", required: false
-            input "mqttPort", "number", title: "MQTT Port", defaultValue: 1883, required: false
+    dynamicPage(name: "mqttPage", title: "MQTT Settings (필수)") {
+        section("MQTT Broker 설정") {
+            paragraph "<b>WiFi 감지를 위해 MQTT 브로커 설정이 필요합니다.</b>"
+            input "mqttBroker", "text", title: "MQTT Broker IP (예: 192.168.1.100)", required: true
+            input "mqttPort", "number", title: "MQTT Port", defaultValue: 1883, required: true
             input "mqttUsername", "text", title: "MQTT Username (선택사항)", required: false
             input "mqttPassword", "password", title: "MQTT Password (선택사항)", required: false
+            
+            if (!settings.mqttBroker) {
+                paragraph "<div style='color: red;'><b>⚠️ MQTT 브로커 IP가 필요합니다. WiFi 감지 기능이 비활성화됩니다.</b></div>"
+            }
         }
         
         section("Topics") {
@@ -416,6 +422,27 @@ def getStatusSummary() {
         summary += "<br>"
     }
     
+    // Add MQTT status
+    summary += "<br><b>MQTT Status:</b><br>"
+    def mqttDevice = getChildDevice("mqtt-wifi-client")
+    if (mqttDevice) {
+        def connectionStatus = mqttDevice.currentValue("connectionStatus") ?: "unknown"
+        def messageCount = mqttDevice.currentValue("messageCount") ?: 0
+        def statusColor = connectionStatus == "connected" ? "green" : 
+                         connectionStatus == "error" ? "red" : "orange"
+        
+        summary += "• <span style='color: ${statusColor};'>Connection: ${connectionStatus}</span><br>"
+        summary += "• Messages received: ${messageCount}<br>"
+        
+        if (connectionStatus != "connected") {
+            summary += "• <span style='color: red;'>⚠️ WiFi 감지 기능이 비활성화됨</span><br>"
+        }
+    } else if (settings.mqttBroker) {
+        summary += "• <span style='color: orange;'>MQTT 클라이언트 생성 중...</span><br>"
+    } else {
+        summary += "• <span style='color: red;'>MQTT 브로커가 설정되지 않음</span><br>"
+    }
+    
     return summary
 }
 
@@ -514,6 +541,13 @@ def createOrUpdateMQTTDevice() {
 // WiFi Detection Handler (called by MQTT driver)
 def wifiDeviceDetected(mac, timestamp) {
     logDebug "WiFi device detected: MAC=${mac}, Timestamp=${timestamp}"
+    
+    // Check if MQTT is properly configured
+    def mqttDevice = getChildDevice("mqtt-wifi-client")
+    if (!mqttDevice || mqttDevice.currentValue("connectionStatus") != "connected") {
+        logDebug "MQTT not connected, ignoring WiFi detection"
+        return
+    }
     
     def device = findDeviceByMac(mac)
     if (device) {
