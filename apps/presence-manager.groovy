@@ -147,10 +147,13 @@ def mqttPage() {
         
         section("Topics") {
             paragraph "Will subscribe to:"
-            paragraph "• AsusAC68U/status/mac-+/lastseen/epoch"
-            paragraph "• UnifiU6Pro/status/mac-+/lastseen/epoch"
+            paragraph "• AsusAC68U/status/+/lastseen/epoch"
+            paragraph "• UnifiU6Pro/status/+/lastseen/epoch"
             paragraph ""
-            paragraph "<b>MAC Format:</b> mac-aa-bb-cc-dd-ee-ff"
+            paragraph "<b>Supported MAC Formats:</b>"
+            paragraph "• mac-aa-bb-cc-dd-ee-ff"
+            paragraph "• aa:bb:cc:dd:ee:ff"
+            paragraph "• aa-bb-cc-dd-ee-ff"
         }
     }
 }

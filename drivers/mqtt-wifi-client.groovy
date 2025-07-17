@@ -155,13 +155,13 @@ def mqttClientStatus(String status) {
 
 def subscribeToTopics() {
     try {
-        // Subscribe to Asus router topics (mac-aa-bb-cc-dd-ee-ff format)
-        interfaces.mqtt.subscribe("AsusAC68U/status/mac-+/lastseen/epoch")
-        logInfo "Subscribed to Asus router topics: AsusAC68U/status/mac-+/lastseen/epoch"
+        // Subscribe to Asus router topics (wildcard for any MAC address)
+        interfaces.mqtt.subscribe("AsusAC68U/status/+/lastseen/epoch")
+        logInfo "Subscribed to Asus router topics: AsusAC68U/status/+/lastseen/epoch"
         
-        // Subscribe to Unifi router topics (mac-aa-bb-cc-dd-ee-ff format)
-        interfaces.mqtt.subscribe("UnifiU6Pro/status/mac-+/lastseen/epoch")
-        logInfo "Subscribed to Unifi router topics: UnifiU6Pro/status/mac-+/lastseen/epoch"
+        // Subscribe to Unifi router topics (wildcard for any MAC address)
+        interfaces.mqtt.subscribe("UnifiU6Pro/status/+/lastseen/epoch")
+        logInfo "Subscribed to Unifi router topics: UnifiU6Pro/status/+/lastseen/epoch"
         
     } catch (Exception e) {
         log.error "Failed to subscribe to topics: ${e.message}"
@@ -202,23 +202,31 @@ def parse(String description) {
 
 def extractMacFromTopic(topic) {
     try {
-        // Extract MAC from topic format: mac-aa-bb-cc-dd-ee-ff
+        // Extract MAC from topic format: router/status/MAC/lastseen/epoch
         // Examples:
         // AsusAC68U/status/mac-aa-bb-cc-dd-ee-ff/lastseen/epoch
-        // UnifiU6Pro/status/mac-aa-bb-cc-dd-ee-ff/lastseen/epoch
+        // UnifiU6Pro/status/aa:bb:cc:dd:ee:ff/lastseen/epoch
+        // AsusAC68U/status/aa-bb-cc-dd-ee-ff/lastseen/epoch
         
-        def pattern = /mac-([0-9a-fA-F-]{17})/  // mac-aa-bb-cc-dd-ee-ff
-        def matcher = topic =~ pattern
+        def patterns = [
+            /\/status\/mac-([0-9a-fA-F-]{17})\/lastseen/,  // mac-aa-bb-cc-dd-ee-ff
+            /\/status\/([0-9a-fA-F:-]{17})\/lastseen/,     // aa:bb:cc:dd:ee:ff or aa-bb-cc-dd-ee-ff
+            /\/status\/([0-9a-fA-F_]{17})\/lastseen/       // aa_bb_cc_dd_ee_ff
+        ]
         
-        if (matcher) {
-            def mac = matcher[0][1]
-            // Convert to colon format: aa-bb-cc-dd-ee-ff -> aa:bb:cc:dd:ee:ff
-            mac = mac.replaceAll('-', ':').toLowerCase()
-            logDebug "Extracted MAC: ${mac} from topic: ${topic}"
-            return mac
+        for (pattern in patterns) {
+            def matcher = topic =~ pattern
+            if (matcher) {
+                def mac = matcher[0][1]
+                // Normalize to colon format
+                mac = mac.replaceAll(/[-_]/, ':').toLowerCase()
+                logDebug "Extracted MAC: ${mac} from topic: ${topic}"
+                return mac
+            }
         }
         
-        logDebug "No MAC found in topic: ${topic} (expected format: mac-aa-bb-cc-dd-ee-ff)"
+        logDebug "No MAC found in topic: ${topic}"
+        logDebug "Supported formats: mac-aa-bb-cc-dd-ee-ff, aa:bb:cc:dd:ee:ff, aa-bb-cc-dd-ee-ff"
         return null
         
     } catch (Exception e) {
