@@ -211,10 +211,8 @@ def initialize() {
         subscribe(device, "presence", individualPresenceHandler)
     }
     
-    // Subscribe to MQTT if configured
-    if (settings.mqttBroker) {
-        setupMQTT()
-    }
+    // Always setup MQTT (will handle missing broker gracefully)
+    setupMQTT()
     
     // Initial status update
     updateCombinedPresence()
@@ -549,10 +547,12 @@ def createOrUpdateMQTTDevice() {
                 device.updateSetting("mqttPort", settings.mqttPort ?: 1883)
                 device.updateSetting("mqttUsername", settings.mqttUsername ?: "")
                 device.updateSetting("mqttPassword", settings.mqttPassword ?: "")
-                log.info "Updated MQTT device settings"
+                device.updateSetting("enableDebug", true)
+                device.updateSetting("enableInfo", true)
+                log.info "Updated MQTT device settings with logging enabled"
                 
                 // Give device time to process settings before refresh
-                runIn(2, triggerMQTTRefresh)
+                runIn(5, triggerMQTTRefresh)
                 
             } catch (Exception e) {
                 log.error "Failed to update MQTT device settings: ${e.message}"

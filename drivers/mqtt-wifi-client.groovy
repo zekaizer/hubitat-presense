@@ -22,7 +22,8 @@ metadata {
         input "mqttPort", "number", title: "MQTT Port", defaultValue: 1883, required: true
         input "mqttUsername", "text", title: "MQTT Username (optional)", required: false
         input "mqttPassword", "password", title: "MQTT Password (optional)", required: false
-        input "enableDebug", "bool", title: "Enable Debug Logging", defaultValue: false
+        input "enableDebug", "bool", title: "Enable Debug Logging", defaultValue: true
+        input "enableInfo", "bool", title: "Enable Info Logging", defaultValue: true
     }
 }
 
@@ -48,10 +49,10 @@ def initialize() {
     
     if (mqttBroker) {
         logInfo "MQTT broker configured: ${mqttBroker}:${mqttPort ?: 1883}"
-        runIn(3, connect)
+        runIn(2, connect)
     } else {
-        logInfo "No MQTT broker configured"
-        sendEvent(name: "connectionStatus", value: "error")
+        logInfo "No MQTT broker configured - waiting for settings"
+        sendEvent(name: "connectionStatus", value: "disconnected")
     }
 }
 
@@ -240,5 +241,5 @@ def logDebug(msg) {
 }
 
 def logInfo(msg) {
-    log.info "${device.displayName}: ${msg}"
+    if (enableInfo != false) log.info "${device.displayName}: ${msg}"
 }
