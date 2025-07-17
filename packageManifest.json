@@ -1,12 +1,12 @@
 {
   "packageName": "WiFi GPS Hybrid Presence System",
   "author": "Luke Lee",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2025-01-18",
   "description": "Advanced WiFi/GPS hybrid presence detection system with WiFi priority logic, manual override, and delayed away features",
   "licenseFile": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/LICENSE",
-  "releaseNotes": "Version 1.2.7 - Fixed null device reference in preferences block causing installation error",
+  "releaseNotes": "Version 1.2.8 - Fixed WiFi Last Seen not updating on keepalive messages causing false timeouts",
   "documentationLink": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/README.md",
   "communityLink": "https://community.hubitat.com/t/wifi-gps-hybrid-presence-system/",
   "apps": [
