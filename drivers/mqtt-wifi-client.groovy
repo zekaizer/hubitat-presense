@@ -28,7 +28,7 @@ metadata {
         input "enableInfo", "bool", title: "Enable Info Logging", defaultValue: true
         input "wifiTimeout", "number", title: "WiFi Timeout (seconds)", 
             description: "Time before marking device disconnected when no MQTT messages received", 
-            defaultValue: 60, required: true, range: "30..600"
+            defaultValue: 15, required: true, range: "10..300"
     }
 }
 
@@ -81,8 +81,8 @@ def initialize() {
         sendEvent(name: "connectionStatus", value: "disconnected")
     }
     
-    // Start timeout checker
-    runEvery1Minute(checkWifiTimeouts)
+    // Start timeout checker - run every 5 seconds for fast responsiveness
+    runEvery5Seconds(checkWifiTimeouts)
 }
 
 def connect() {
@@ -325,13 +325,11 @@ def extractMacFromTopic(topic) {
         // Extract MAC from topic format: router/status/MAC/lastseen/epoch
         // Examples:
         // AsusAC68U/status/mac-aa-bb-cc-dd-ee-ff/lastseen/epoch
-        // UnifiU6Pro/status/aa:bb:cc:dd:ee:ff/lastseen/epoch
-        // AsusAC68U/status/aa-bb-cc-dd-ee-ff/lastseen/epoch
+        // UnifiU6Pro/status/mac-aa:bb:cc:dd:ee:ff/lastseen/epoch
         
         def patterns = [
             /\/status\/mac-([0-9a-fA-F-]{17})\/lastseen/,  // mac-aa-bb-cc-dd-ee-ff
-            /\/status\/([0-9a-fA-F:-]{17})\/lastseen/,     // aa:bb:cc:dd:ee:ff or aa-bb-cc-dd-ee-ff
-            /\/status\/([0-9a-fA-F_]{17})\/lastseen/       // aa_bb_cc_dd_ee_ff
+            /\/status\/mac-([0-9a-fA-F:]{17})\/lastseen/   // mac-aa:bb:cc:dd:ee:ff
         ]
         
         for (pattern in patterns) {
@@ -346,7 +344,7 @@ def extractMacFromTopic(topic) {
         }
         
         logDebug "No MAC found in topic: ${topic}"
-        logDebug "Supported formats: mac-aa-bb-cc-dd-ee-ff, aa:bb:cc:dd:ee:ff, aa-bb-cc-dd-ee-ff"
+        logDebug "Supported formats: mac-aa-bb-cc-dd-ee-ff, mac-aa:bb:cc:dd:ee:ff"
         return null
         
     } catch (Exception e) {
