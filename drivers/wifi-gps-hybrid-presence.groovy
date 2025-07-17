@@ -29,7 +29,7 @@ metadata {
     
     preferences {
         input "deviceName", "text", title: "Device Name", defaultValue: "Device", required: true
-        input "wifiTimeout", "number", title: "WiFi Timeout (seconds)", defaultValue: 180, required: true
+        input "wifiTimeout", "number", title: "WiFi Timeout (seconds)", defaultValue: 60, required: true
         input "gpsExitDelay", "number", title: "GPS Exit Delay (seconds)", defaultValue: 120, required: true
         input "arrivalDelay", "number", title: "Arrival Delay (seconds)", defaultValue: 0
         input "enableDebug", "bool", title: "Enable Debug Logging", defaultValue: true
@@ -145,7 +145,7 @@ def markAsPresent(method) {
     if (device.currentValue("presence") != "present") {
         def name = deviceName ?: device.displayName ?: "Device"
         logInfo "${name} arrived via ${method}"
-        sendEvent(name: "presence", value: "present", descriptionText: "${deviceName} has arrived")
+        sendEvent(name: "presence", value: "present", descriptionText: "${name} has arrived")
         sendEvent(name: "method", value: method)
         sendEvent(name: "confidence", value: calculateConfidence())
         state.presence = "present"
@@ -160,7 +160,7 @@ def markAsNotPresent(method) {
     if (device.currentValue("presence") != "not present") {
         def name = deviceName ?: device.displayName ?: "Device"
         logInfo "${name} departed via ${method}"
-        sendEvent(name: "presence", value: "not present", descriptionText: "${deviceName} has left")
+        sendEvent(name: "presence", value: "not present", descriptionText: "${name} has left")
         sendEvent(name: "method", value: method)
         sendEvent(name: "confidence", value: calculateConfidence())
         state.presence = "not present"

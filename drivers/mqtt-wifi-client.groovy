@@ -337,6 +337,11 @@ def processWifiMessage(mac, payload) {
     } else {
         // Device already connected - just update timestamp
         logDebug "WiFi keepalive for ${mac} at ${new Date()}"
+        
+        // Forward keepalive to parent app to update device timestamp
+        if (parent) {
+            parent.wifiDeviceDetected(mac, payload)
+        }
     }
     
     // Update stats every 10 messages to reduce events
