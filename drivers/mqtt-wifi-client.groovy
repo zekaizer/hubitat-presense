@@ -183,14 +183,7 @@ def mqttClientStatus(String status) {
 def subscribeToTopics() {
     try {
         // Get MAC list from parent app
-        def macList = []
-        if (parent != null) {
-            macList = parent.getRegisteredMACs() ?: []
-        } else {
-            logInfo "No parent app found - driver running standalone"
-            // When running standalone, you can add test MACs here
-            // macList = ["aa:bb:cc:dd:ee:ff"]
-        }
+        def macList = parent?.getRegisteredMACs() ?: []
         updateSubscriptions(macList)
         
     } catch (Exception e) {
@@ -315,12 +308,8 @@ def processWifiMessage(mac, payload) {
         state.deviceStates[mac] = "connected"
         
         // Forward to parent app only on state change
-        if (parent != null) {
-            try {
-                parent.wifiDeviceDetected(mac, payload)
-            } catch (Exception e) {
-                logDebug "Error forwarding to parent app: ${e.message}"
-            }
+        if (parent) {
+            parent.wifiDeviceDetected(mac, payload)
         } else {
             logDebug "No parent app found to forward WiFi detection"
         }
@@ -429,12 +418,8 @@ def checkDeviceTimeout(data) {
         state.deviceStates[mac] = "disconnected"
         
         // Forward timeout to parent app
-        if (parent != null) {
-            try {
-                parent.wifiDeviceTimeout(mac)
-            } catch (Exception e) {
-                logDebug "Error forwarding timeout to parent app: ${e.message}"
-            }
+        if (parent) {
+            parent.wifiDeviceTimeout(mac)
         }
         
         updateDeviceCount()
