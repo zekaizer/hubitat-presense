@@ -61,8 +61,8 @@ def initialize() {
     sendEvent(name: "gpsStatus", value: "unknown")
     sendEvent(name: "confidence", value: 0)
     
-    // Schedule periodic state check
-    runEvery1Minute(checkPresenceState)
+    // Schedule first state check
+    runIn(60, schedulePresenceCheck)
 }
 
 // WiFi Detection Methods
@@ -103,12 +103,13 @@ def wifiDetected(epochTime = null) {
 def wifiLost() {
     def name = deviceName ?: device.displayName ?: "Device"
     logInfo "${name} WiFi lost"
-    
+
     // Update last seen time to current to start timeout from now
     state.wifiLastSeen = now()
     sendEvent(name: "wifiStatus", value: "disconnected")
     
     // Don't immediately mark as away - wait for GPS confirmation
+    unschedule(checkDeparture)
     runIn(wifiTimeout, checkDeparture)
     logDebug "Will check departure in ${wifiTimeout} seconds"
 }
@@ -180,9 +181,9 @@ def checkDeparture() {
     def gpsOutside = !state.gpsInside
     
     logDebug "Departure check - WiFi recent: ${wifiRecent}, GPS outside: ${gpsOutside}"
-    
+
     // WiFi has priority - if WiFi is connected, ignore GPS exit
-    if (wifiRecent) {
+    if (device.currentValue("wifiStatus") == "connected" || wifiRecent) {
         logDebug "WiFi still connected, ignoring GPS exit"
         return
     }
@@ -194,42 +195,65 @@ def checkDeparture() {
 }
 
 def checkPresenceState() {
+    // Performance monitoring
+    def startTime = now()
+    
     def currentPresence = device.currentValue("presence")
     def wifiRecent = isWifiRecent()
     def gpsInside = state.gpsInside
     
-    // Update WiFi status
-    if (wifiRecent != (device.currentValue("wifiStatus") == "connected")) {
-        sendEvent(name: "wifiStatus", value: wifiRecent ? "connected" : "disconnected")
-    }
+    // Only perform checks if something changed
+    def wifiChanged = (state.lastWifiRecent != wifiRecent)
+    def gpsChanged = (state.lastGpsInside != gpsInside)
     
-    // Calculate new presence state
-    if (currentPresence == "present") {
-        // For departure: WiFi has priority
-        if (wifiRecent) {
-            // WiFi connected, remain present regardless of GPS
-            logDebug "WiFi connected, maintaining present status"
+    if (wifiChanged || gpsChanged) {
+        logDebug "State change detected - WiFi: ${wifiRecent}, GPS: ${gpsInside}"
+        
+        // Calculate new presence state
+        if (currentPresence == "present") {
+            // For departure: WiFi has priority
+            if (wifiRecent) {
+                // WiFi connected, remain present regardless of GPS
+                logDebug "WiFi connected, maintaining present status"
+            } else {
+                // WiFi timeout - check GPS status
+                if (!gpsInside) {
+                    markAsNotPresent("wifi-timeout")
+                }
+            }
         } else {
-            // WiFi timeout - check GPS status
-            if (!gpsInside) {
-                markAsNotPresent("wifi-timeout")
+            // For arrival: WiFi is sufficient (no GPS entry required)
+            if (wifiRecent) {
+                markAsPresent("wifi-check")
             }
         }
-    } else {
-        // For arrival: WiFi is sufficient (no GPS entry required)
-        if (wifiRecent) {
-            markAsPresent("wifi-check")
-        }
+        
+        // Update confidence
+        sendEvent(name: "confidence", value: calculateConfidence())
     }
     
-    // Update confidence
-    sendEvent(name: "confidence", value: calculateConfidence())
+    // Store current state for next check
+    state.lastWifiRecent = wifiRecent
+    state.lastGpsInside = gpsInside
+    
+    // Performance logging
+    def elapsedTime = now() - startTime
+    if (elapsedTime > 50) {
+        logInfo "Performance: Presence check took ${elapsedTime}ms"
+    }
 }
 
 // Helper methods
 def isWifiRecent() {
     def wifiAge = (now() - state.wifiLastSeen) / 1000
     return wifiAge < wifiTimeout
+}
+
+// Schedule next presence check
+def schedulePresenceCheck() {
+    checkPresenceState()
+    // Schedule next check in 60 seconds
+    runIn(60, schedulePresenceCheck)
 }
 
 def calculateConfidence() {

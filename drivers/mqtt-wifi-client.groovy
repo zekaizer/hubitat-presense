@@ -28,16 +28,13 @@ metadata {
         input "enableInfo", "bool", title: "Enable Info Logging", defaultValue: true
         input "wifiTimeout", "number", title: "WiFi Timeout (seconds)", 
             description: "Time before marking device disconnected when no MQTT messages received", 
-            defaultValue: 15, required: true, range: "10..300"
+            defaultValue: 5, required: true, range: "5..300"
     }
 }
 
 def installed() {
     log.info "Installing MQTT WiFi Client"
     initialize()
-    
-    // Ensure timeout checker is started after installation
-    runIn(5, startTimeoutChecker)
 }
 
 def updated() {
@@ -62,9 +59,7 @@ def updated() {
         logInfo "Forced reconnection scheduled for subscription update"
     }
     
-    // Restart timeout checker after configuration update
-    runIn(5, checkWifiTimeoutsAndReschedule)
-    logDebug "WiFi timeout checker restarted"
+    logDebug "Configuration updated"
 }
 
 def initialize() {
@@ -88,9 +83,7 @@ def initialize() {
         sendEvent(name: "connectionStatus", value: "disconnected")
     }
     
-    // Start timeout checker - use runIn pattern for 5 second intervals
-    runIn(5, checkWifiTimeoutsAndReschedule)
-    logDebug "WiFi timeout checker started - will check every 5 seconds"
+    logDebug "Event-based timeout management enabled"
 }
 
 def connect() {
@@ -126,13 +119,8 @@ def connect() {
         log.error "Failed to connect to MQTT broker: ${e.message}"
         sendEvent(name: "connectionStatus", value: "error")
         
-        // Retry with backoff
-        state.retryCount = (state.retryCount ?: 0) + 1
-        if (state.retryCount < 5) {
-            def retryDelay = Math.min(60, 10 * state.retryCount)
-            logDebug "Will retry connection in ${retryDelay} seconds"
-            runIn(retryDelay, connect)
-        }
+        // Schedule retry with exponential backoff
+        scheduleRetry()
     }
 }
 
@@ -169,15 +157,8 @@ def mqttClientStatus(String status) {
         log.error "MQTT Error: ${status}"
         sendEvent(name: "connectionStatus", value: "error")
         
-        // Retry connection with backoff
-        state.retryCount = (state.retryCount ?: 0) + 1
-        if (state.retryCount < 5) {
-            def retryDelay = Math.min(60, 15 * state.retryCount)
-            logDebug "Will retry connection in ${retryDelay} seconds (retry ${state.retryCount}/5)"
-            runIn(retryDelay, connect)
-        } else {
-            log.error "Maximum retry attempts reached. Please check MQTT broker settings."
-        }
+        // Schedule retry with exponential backoff
+        scheduleRetry()
         
     } else if (status.contains("succeeded")) {
         logInfo "MQTT connection successful"
@@ -337,12 +318,10 @@ def processWifiMessage(mac, payload) {
     } else {
         // Device already connected - just update timestamp
         logDebug "WiFi keepalive for ${mac} at ${new Date()}"
-        
-        // Forward keepalive to parent app to update device timestamp
-        if (parent) {
-            parent.wifiDeviceDetected(mac, payload)
-        }
     }
+    
+    // Schedule timeout check for this device
+    scheduleTimeoutCheck(mac)
     
     // Update stats every 10 messages to reduce events
     if (state.messageCount % 10 == 0) {
@@ -388,52 +367,59 @@ def logDebug(msg) {
     if (enableDebug) log.debug "${device.displayName}: ${msg}"
 }
 
-// WiFi timeout checker
-def checkWifiTimeouts() {
-    // Log function call for debugging
-    logDebug "checkWifiTimeouts() called at ${new Date()}"
+// Event-based timeout management
+def scheduleTimeoutCheck(mac) {
+    // Cancel previous timeout check for this MAC
+    def timeoutMethod = "checkTimeout_${mac.replaceAll(':', '')}"
+    unschedule(timeoutMethod)
     
-    // Ensure state maps are initialized
-    if (!state.deviceStates) state.deviceStates = [:]
-    if (!state.lastMessageTime) state.lastMessageTime = [:]
-    if (!state.lastEpochTime) state.lastEpochTime = [:]
+    // Schedule new timeout check
+    def timeoutSeconds = wifiTimeout ?: 5
+    logDebug "Scheduling timeout check for ${mac} in ${timeoutSeconds + 1} seconds"
     
-    def currentTime = now()
-    def currentEpochSeconds = currentTime / 1000
-    def timeoutSeconds = wifiTimeout ?: 15
-    def timedOutDevices = []
+    runIn(timeoutSeconds + 1, timeoutMethod, [overwrite: true])
+}
+
+def methodMissing(String name, args) {
+    // Handle dynamic timeout check methods
+    if (name.startsWith("checkTimeout_")) {
+        def mac = name.substring(13).replaceAll('(..)', '$1:').replaceAll(':$', '')
+        checkTimeout(mac)
+    } else {
+        throw new MissingMethodException(name, delegate, args)
+    }
+}
+
+def checkTimeout(mac) {
+    def currentEpochSeconds = now() / 1000
+    def lastEpochTime = state.lastEpochTime[mac]
+    def timeoutSeconds = wifiTimeout ?: 5
     
-    logDebug "Checking WiFi timeouts - Current epoch: ${currentEpochSeconds}, Timeout: ${timeoutSeconds}s"
-    
-    state.lastEpochTime.each { mac, lastEpochTime ->
-        def deviceState = state.deviceStates[mac]
-        if (deviceState == "connected" && lastEpochTime) {
-            def timeDiffSeconds = currentEpochSeconds - lastEpochTime
-            
-            logDebug "MAC: ${mac}, State: ${deviceState}, Last epoch: ${lastEpochTime}, Diff: ${timeDiffSeconds}s"
-            
-            if (timeDiffSeconds > timeoutSeconds) {
-                timedOutDevices << mac
-                logDebug "WiFi device will timeout: ${mac} (${timeDiffSeconds}s > ${timeoutSeconds}s)"
-            }
-        }
+    if (!lastEpochTime) {
+        logDebug "No epoch time recorded for ${mac}"
+        return
     }
     
-    timedOutDevices.each { mac ->
-        def lastTime = state.lastMessageTime[mac]
-        def timeDiff = currentTime - lastTime
-        logInfo "WiFi device timed out: ${mac} (last seen: ${timeDiff}ms ago)"
+    def elapsed = currentEpochSeconds - lastEpochTime
+    
+    if (elapsed > timeoutSeconds) {
+        // Device has timed out
+        logInfo "WiFi device timed out: ${mac} (last seen: ${elapsed}s ago)"
         state.deviceStates[mac] = "disconnected"
         
         // Forward timeout to parent app
         if (parent) {
             parent.wifiDeviceTimeout(mac)
         }
-    }
-    
-    if (timedOutDevices.size() > 0) {
+        
         updateDeviceCount()
-        logDebug "Updated device count after ${timedOutDevices.size()} timeouts"
+    } else {
+        // Still within timeout, reschedule
+        def remaining = timeoutSeconds - elapsed + 1
+        logDebug "Device ${mac} still active, rechecking in ${remaining}s"
+        
+        def timeoutMethod = "checkTimeout_${mac.replaceAll(':', '')}"
+        runIn(remaining as Integer, timeoutMethod, [overwrite: true])
     }
 }
 
@@ -446,25 +432,19 @@ def updateDeviceCount() {
     logDebug "Connected devices: ${connectedCount}"
 }
 
-def startTimeoutChecker() {
-    logDebug "Starting/restarting timeout checker"
-    
-    // Clear any existing schedules first
-    unschedule(checkWifiTimeouts)
-    unschedule(checkWifiTimeoutsAndReschedule)
-    
-    // Use runIn pattern since runEvery5Seconds doesn't exist in Hubitat
-    runIn(5, checkWifiTimeoutsAndReschedule)
-    logInfo "Timeout checker scheduled using runIn method (every 5 seconds)"
-}
 
-
-def checkWifiTimeoutsAndReschedule() {
-    // Call the timeout check function
-    checkWifiTimeouts()
-    
-    // Schedule next run in 5 seconds
-    runIn(5, checkWifiTimeoutsAndReschedule)
+// Centralized retry logic
+def scheduleRetry() {
+    state.retryCount = (state.retryCount ?: 0) + 1
+    if (state.retryCount < 5) {
+        def retryDelay = Math.min(60, 10 * Math.pow(2, state.retryCount - 1))
+        logDebug "Will retry connection in ${retryDelay} seconds (retry ${state.retryCount}/5)"
+        unschedule(connect)
+        runIn(retryDelay as Integer, connect)
+    } else {
+        log.error "Maximum retry attempts reached. Please check MQTT broker settings."
+        state.retryCount = 0
+    }
 }
 
 def logInfo(msg) {
