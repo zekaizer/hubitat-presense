@@ -370,14 +370,16 @@ def logDebug(msg) {
 // Event-based timeout management
 def scheduleTimeoutCheck(mac) {
     // Cancel previous timeout check for this MAC
-    def timeoutMethod = "checkTimeout_${mac.replaceAll(':', '')}"
-    unschedule(timeoutMethod)
+    def cleanMac = mac.replaceAll(':', '')
+    
+    // Use closure instead of dynamic method name
+    unschedule("timeoutCheck${cleanMac}")
     
     // Schedule new timeout check
     def timeoutSeconds = wifiTimeout ?: 5
     logDebug "Scheduling timeout check for ${mac} in ${timeoutSeconds + 1} seconds"
     
-    runIn(timeoutSeconds + 1, timeoutMethod, [overwrite: true])
+    runIn(timeoutSeconds + 1, "checkDeviceTimeout", [overwrite: true, data: [mac: mac]])
 }
 
 def methodMissing(String name, args) {
@@ -385,12 +387,20 @@ def methodMissing(String name, args) {
     if (name.startsWith("checkTimeout_")) {
         def mac = name.substring(13).replaceAll('(..)', '$1:').replaceAll(':$', '')
         checkTimeout(mac)
-    } else {
-        throw new MissingMethodException(name, delegate, args)
+        return null
     }
+    // For non-timeout methods, log error instead of throwing exception
+    log.error "Method not found: ${name}"
+    return null
 }
 
-def checkTimeout(mac) {
+def checkDeviceTimeout(data) {
+    def mac = data?.mac
+    if (!mac) {
+        log.error "checkDeviceTimeout called without MAC address"
+        return
+    }
+    
     def currentEpochSeconds = now() / 1000
     def lastEpochTime = state.lastEpochTime[mac]
     def timeoutSeconds = wifiTimeout ?: 5
@@ -418,9 +428,13 @@ def checkTimeout(mac) {
         def remaining = timeoutSeconds - elapsed + 1
         logDebug "Device ${mac} still active, rechecking in ${remaining}s"
         
-        def timeoutMethod = "checkTimeout_${mac.replaceAll(':', '')}"
-        runIn(remaining as Integer, timeoutMethod, [overwrite: true])
+        runIn(remaining as Integer, "checkDeviceTimeout", [overwrite: true, data: [mac: mac]])
     }
+}
+
+// Keep old method for compatibility
+def checkTimeout(mac) {
+    checkDeviceTimeout([mac: mac])
 }
 
 def updateDeviceCount() {

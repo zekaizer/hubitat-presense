@@ -1,12 +1,12 @@
 {
   "packageName": "WiFi GPS Hybrid Presence System",
   "author": "Luke Lee",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2025-01-18",
   "description": "Advanced WiFi/GPS hybrid presence detection system with WiFi priority logic, manual override, and delayed away features",
   "licenseFile": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/LICENSE",
-  "releaseNotes": "Version 1.2.9 - Refactored MQTT WiFi Client to event-based timeout management for improved performance. Replaced periodic 30-second checks with individual device timeout scheduling.",
+  "releaseNotes": "Version 1.2.10 - Fixed methodMissing error in MQTT WiFi Client by replacing dynamic method invocation with data-based approach for Hubitat compatibility.",
   "documentationLink": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/README.md",
   "communityLink": "https://community.hubitat.com/t/wifi-gps-hybrid-presence-system/",
   "apps": [
