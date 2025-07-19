@@ -252,6 +252,10 @@ def restoreState() {
 }
 
 def updatePresenceState(String presenceValue) {
+    // Check if presence state is actually changing
+    String currentPresence = device.currentValue("presence")
+    boolean isStateChanging = (currentPresence != presenceValue)
+    
     // Update presence state and save to state
     String currentTime = new Date().toString()
     
@@ -261,6 +265,11 @@ def updatePresenceState(String presenceValue) {
     // Save to state for recovery
     state.lastPresence = presenceValue
     state.lastActivity = currentTime
+    
+    // Log presence state changes at info level
+    if (isStateChanging) {
+        log.info "Presence changed from '${currentPresence}' to '${presenceValue}'"
+    }
     
     if (debugLogging) log.debug "Presence updated to: ${presenceValue}, saved to state"
 }
