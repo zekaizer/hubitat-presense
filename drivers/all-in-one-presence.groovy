@@ -13,7 +13,6 @@ metadata {
         
         attribute "presence", "enum", ["present", "not present"]
         attribute "lastActivity", "string"
-        attribute "lastHeartbeat", "string"
         attribute "wifiPresence", "enum", ["connected", "disconnected"]
         attribute "gpsPresence", "enum", ["entered", "exited"]
         
@@ -97,10 +96,9 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
             log.debug "Epoch time: ${epochTime}, Current time: ${currentTime}"
         }
         
-        // Update lastHeartbeat attribute
+        // Update lastHeartbeat state (for timeout monitoring)
         Date heartbeatDate = new Date(epochTime * 1000)
         String heartbeatStr = heartbeatDate.toString()
-        sendEvent(name: "lastHeartbeat", value: heartbeatStr)
         state.lastHeartbeat = heartbeatStr
         state.lastHeartbeatEpoch = epochTime
         
@@ -267,9 +265,7 @@ def restoreState() {
         state.lastActivity = currentTime
     }
     
-    if (savedHeartbeat) {
-        sendEvent(name: "lastHeartbeat", value: savedHeartbeat)
-    }
+    // lastHeartbeat is kept in state for internal use only (no event)
     
     // Restore heartbeat epoch for timeout monitoring
     if (savedHeartbeatEpoch && debugLogging) {

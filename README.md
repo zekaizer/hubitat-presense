@@ -53,7 +53,6 @@ The driver implements the following Hubitat capabilities:
 
 - `presence`: enum ["present", "not present"] - final combined presence state
 - `lastActivity`: string timestamp of last state change
-- `lastHeartbeat`: string timestamp of last WiFi heartbeat received
 - `wifiPresence`: enum ["connected", "disconnected"] - WiFi connection status
 - `gpsPresence`: enum ["entered", "exited"] - GPS geofence status
 
@@ -95,7 +94,7 @@ The driver includes support for GPS-based presence detection through specialized
 
 ### Heartbeat Monitoring
 - Implements event-based heartbeat system for improved device tracking
-- Maintains `lastHeartbeat` attribute for connection monitoring
+- Internal heartbeat monitoring for connection timeout detection
 
 ## Final Presence Logic
 
@@ -162,7 +161,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - State recovery functionality for hub restarts
 - MAC address normalization (colon and dash format support)
 - Enhanced logging with presence state change notifications
-- New attributes: wifiPresence, gpsPresence, lastHeartbeat
+- New attributes: wifiPresence, gpsPresence
 
 ### Version 0.0.1 (2025-01-18)
 - Initial release
