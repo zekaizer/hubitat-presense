@@ -63,6 +63,9 @@ def initialize() {
     // Restore saved state or set initial state
     restoreState()
     
+    // Initialize MQTT connection
+    connectMQTT()
+    
     // Auto-discover children if enabled
     if (settings.autoAddChildren) {
         autoDiscoverChildren()
@@ -74,8 +77,24 @@ def initialize() {
 }
 
 def parse(String description) {
-    // This parent driver doesn't parse physical device messages
-    if (debugLogging) log.debug "Parse called with: ${description}"
+    if (debugLogging) log.debug "Parsing: ${description}"
+    
+    // Parse MQTT messages
+    try {
+        def parsedMsg = interfaces.mqtt.parseMessage(description)
+        def topic = parsedMsg.topic
+        def payload = parsedMsg.payload
+        
+        if (debugLogging) log.debug "MQTT Message - Topic: ${topic}, Payload: ${payload}"
+        
+        // Check if this is a WiFi presence heartbeat message
+        if (topic.contains("/lastseen/epoch")) {
+            handleWiFiPresenceHeartbeat(topic, payload)
+        }
+        
+    } catch (Exception e) {
+        if (debugLogging) log.debug "Failed to parse MQTT message: ${e.message}"
+    }
 }
 
 def present() {
@@ -161,6 +180,9 @@ def addChildDevice(macAddress = null) {
             // Initialize the child device
             childDevice.initialize()
             
+            // Subscribe to MQTT topics for this MAC address
+            subscribeToMacAddress(macAddress)
+            
             updateChildStatistics()
             return childDevice
         } else {
@@ -188,6 +210,9 @@ def removeChildDevice(macAddress) {
         
         def childDevice = getChildDevice(childDeviceNetworkId)
         if (childDevice) {
+            // Unsubscribe from MQTT topics for this MAC address
+            unsubscribeFromMacAddress(macAddress)
+            
             deleteChildDevice(childDeviceNetworkId)
             if (debugLogging) log.debug "Successfully removed child device: ${childDevice.getDisplayName()}"
             updateChildStatistics()
@@ -344,4 +369,144 @@ def normalizeMacAddress(String macAddr) {
     // Convert MAC address from AA:BB:CC:DD:EE:FF to aa-bb-cc-dd-ee-ff format
     // Also handle case conversion to lowercase
     return macAddr?.toLowerCase()?.replace(":", "-")
+}
+
+def connectMQTT() {
+    try {
+        if (!settings.defaultMqttBroker) {
+            if (debugLogging) log.debug "MQTT Broker not configured"
+            return
+        }
+        
+        if (debugLogging) log.debug "Connecting to MQTT broker: ${settings.defaultMqttBroker}:${settings.defaultMqttPort}"
+        
+        // Disconnect if already connected
+        try {
+            interfaces.mqtt.disconnect()
+        } catch (Exception e) {
+            // Ignore disconnect errors
+        }
+        
+        // Connect to MQTT broker
+        String brokerUrl = "tcp://${settings.defaultMqttBroker}:${settings.defaultMqttPort ?: '1883'}"
+        String clientId = "hubitat-composite-presence-${device.id}"
+        String username = settings.defaultMqttUsername ?: null
+        String password = settings.defaultMqttPassword ?: null
+        
+        interfaces.mqtt.connect(brokerUrl, clientId, username, password)
+        
+        // Subscribe to topics after connection
+        runIn(2, "subscribeToChildTopics")
+        
+    } catch (Exception e) {
+        log.error "Failed to connect to MQTT: ${e.message}"
+    }
+}
+
+def subscribeToChildTopics() {
+    try {
+        def children = getChildDevices()
+        children.each { child ->
+            def macAddress = child.getSetting("macAddress")
+            if (macAddress) {
+                subscribeToMacAddress(macAddress)
+            }
+        }
+        
+        if (debugLogging) {
+            log.debug "Subscribed to MQTT topics for ${children.size()} child devices"
+        }
+        
+    } catch (Exception e) {
+        log.error "Failed to subscribe to child topics: ${e.message}"
+    }
+}
+
+def subscribeToMacAddress(String macAddress) {
+    try {
+        String normalizedMac = normalizeMacAddress(macAddress)
+        
+        // Subscribe to WiFi presence topics for this MAC address
+        String unifiTopic = "UnifiU6Pro/status/mac-${normalizedMac}/lastseen/epoch"
+        String asusTopic = "AsusAC68U/status/mac-${normalizedMac}/lastseen/epoch"
+        
+        interfaces.mqtt.subscribe(unifiTopic)
+        interfaces.mqtt.subscribe(asusTopic)
+        
+        if (debugLogging) {
+            log.debug "Subscribed to MQTT topics for MAC ${macAddress}:"
+            log.debug "  - ${unifiTopic}"
+            log.debug "  - ${asusTopic}"
+        }
+        
+    } catch (Exception e) {
+        log.error "Failed to subscribe to MAC address ${macAddress}: ${e.message}"
+    }
+}
+
+def unsubscribeFromMacAddress(String macAddress) {
+    try {
+        String normalizedMac = normalizeMacAddress(macAddress)
+        
+        // Unsubscribe from WiFi presence topics for this MAC address
+        String unifiTopic = "UnifiU6Pro/status/mac-${normalizedMac}/lastseen/epoch"
+        String asusTopic = "AsusAC68U/status/mac-${normalizedMac}/lastseen/epoch"
+        
+        interfaces.mqtt.unsubscribe(unifiTopic)
+        interfaces.mqtt.unsubscribe(asusTopic)
+        
+        if (debugLogging) {
+            log.debug "Unsubscribed from MQTT topics for MAC ${macAddress}:"
+            log.debug "  - ${unifiTopic}"
+            log.debug "  - ${asusTopic}"
+        }
+        
+    } catch (Exception e) {
+        log.error "Failed to unsubscribe from MAC address ${macAddress}: ${e.message}"
+    }
+}
+
+def mqttClientStatus(String status) {
+    if (debugLogging) log.debug "MQTT client status: ${status}"
+    if (status == "connected") {
+        subscribeToChildTopics()
+    }
+}
+
+def handleWiFiPresenceHeartbeat(String topic, String payload) {
+    try {
+        // Extract MAC address from topic
+        // Topic format: UnifiU6Pro/status/mac-aa-bb-cc-dd-ee-ff/lastseen/epoch
+        def macMatch = topic =~ /mac-([a-f0-9-]+)/
+        if (!macMatch) {
+            if (debugLogging) log.debug "Could not extract MAC address from topic: ${topic}"
+            return
+        }
+        
+        String macFromTopic = macMatch[0][1]
+        
+        // Find the corresponding child device
+        def childDeviceNetworkId = "composite-presence-${macFromTopic}"
+        def childDevice = getChildDevice(childDeviceNetworkId)
+        
+        if (!childDevice) {
+            if (debugLogging) log.debug "No child device found for MAC: ${macFromTopic}"
+            return
+        }
+        
+        // Parse epoch timestamp
+        Long epochTime = Long.parseLong(payload.trim())
+        Long currentTime = now() / 1000 // Convert to seconds
+        
+        if (debugLogging) {
+            log.debug "WiFi heartbeat received for ${childDevice.getDisplayName()}"
+            log.debug "Epoch time: ${epochTime}, Current time: ${currentTime}"
+        }
+        
+        // Send heartbeat data to child device
+        childDevice.componentHandleHeartbeat(epochTime)
+        
+    } catch (Exception e) {
+        log.error "Failed to handle WiFi presence heartbeat: ${e.message}"
+    }
 }
