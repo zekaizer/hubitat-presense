@@ -14,11 +14,15 @@ metadata {
         attribute "presence", "enum", ["present", "not present"]
         attribute "lastActivity", "string"
         attribute "lastHeartbeat", "string"
+        attribute "wifiPresence", "enum", ["connected", "disconnected"]
+        attribute "gpsPresence", "enum", ["entered", "exited"]
         
         command "present"
         command "notPresent"
         command "arrive"
         command "depart"
+        command "gpsEnter"
+        command "gpsExit"
     }
     
     preferences {
@@ -103,11 +107,8 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         // Check if heartbeat is recent (within last 30 seconds)
         Long timeDiff = currentTime - epochTime
         if (timeDiff <= 30) {
-            // Device is present
-            if (device.currentValue("presence") != "present") {
-                if (debugLogging) log.debug "Setting presence to present (WiFi heartbeat)"
-                updatePresenceState("present")
-            }
+            // WiFi is connected
+            updateWiFiPresence("connected")
             
             // Schedule heartbeat timeout check
             scheduleHeartbeatTimeoutCheck()
@@ -121,13 +122,17 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
 }
 
 def present() {
-    if (debugLogging) log.debug "Setting presence to present"
-    updatePresenceState("present")
+    if (debugLogging) log.debug "Manual present command received"
+    // Manual command overrides all - set WiFi connected and GPS entered
+    updateWiFiPresence("connected")
+    updateGPSPresence("entered")
 }
 
 def notPresent() {
-    if (debugLogging) log.debug "Setting presence to not present"
-    updatePresenceState("not present")
+    if (debugLogging) log.debug "Manual not present command received"
+    // Manual command overrides all - set WiFi disconnected and GPS exited
+    updateWiFiPresence("disconnected")
+    updateGPSPresence("exited")
 }
 
 def arrive() {
@@ -218,14 +223,35 @@ def normalizeMacAddress(String macAddr) {
 }
 
 def restoreState() {
-    // Restore saved presence state or set defaults
+    // Restore saved presence states or set defaults
     String savedPresence = state.lastPresence
     String savedActivity = state.lastActivity
     String savedHeartbeat = state.lastHeartbeat
     Long savedHeartbeatEpoch = state.lastHeartbeatEpoch
+    String savedWiFiPresence = state.wifiPresence
+    String savedGPSPresence = state.gpsPresence
     
+    // Restore WiFi presence state
+    if (savedWiFiPresence) {
+        sendEvent(name: "wifiPresence", value: savedWiFiPresence)
+        if (debugLogging) log.debug "Restored WiFi presence state: ${savedWiFiPresence}"
+    } else {
+        sendEvent(name: "wifiPresence", value: "disconnected")
+        state.wifiPresence = "disconnected"
+    }
+    
+    // Restore GPS presence state
+    if (savedGPSPresence) {
+        sendEvent(name: "gpsPresence", value: savedGPSPresence)
+        if (debugLogging) log.debug "Restored GPS presence state: ${savedGPSPresence}"
+    } else {
+        sendEvent(name: "gpsPresence", value: "exited")
+        state.gpsPresence = "exited"
+    }
+    
+    // Restore final presence state
     if (savedPresence) {
-        if (debugLogging) log.debug "Restoring saved presence state: ${savedPresence}"
+        if (debugLogging) log.debug "Restoring saved final presence state: ${savedPresence}"
         sendEvent(name: "presence", value: savedPresence)
     } else {
         if (debugLogging) log.debug "No saved presence state, setting to 'not present'"
@@ -301,11 +327,9 @@ def checkHeartbeatTimeout() {
         }
         
         if (timeSinceLastHeartbeat > timeoutSeconds) {
-            // Heartbeat timeout - set presence to not present
-            if (device.currentValue("presence") == "present") {
-                if (debugLogging) log.debug "Heartbeat timeout detected, setting presence to 'not present'"
-                updatePresenceState("not present")
-            }
+            // Heartbeat timeout - set WiFi presence to disconnected
+            if (debugLogging) log.debug "WiFi heartbeat timeout detected"
+            updateWiFiPresence("disconnected")
         } else {
             // Still within timeout period, schedule another check
             Integer remainingTime = timeoutSeconds - timeSinceLastHeartbeat
@@ -318,4 +342,98 @@ def checkHeartbeatTimeout() {
     } catch (Exception e) {
         log.error "Failed to check heartbeat timeout: ${e.message}"
     }
+}
+
+def updateWiFiPresence(String wifiPresenceValue) {
+    // Update WiFi presence state
+    String currentWiFiPresence = device.currentValue("wifiPresence")
+    
+    sendEvent(name: "wifiPresence", value: wifiPresenceValue)
+    state.wifiPresence = wifiPresenceValue
+    
+    if (currentWiFiPresence != wifiPresenceValue) {
+        if (debugLogging) log.debug "WiFi presence changed from '${currentWiFiPresence}' to '${wifiPresenceValue}'"
+        
+        // Apply presence logic
+        if (wifiPresenceValue == "connected") {
+            // WiFi connected - immediate presence + assume GPS entered
+            updateGPSPresence("entered")
+            evaluateFinalPresence()
+        } else {
+            // WiFi disconnected - determine based on GPS enter/exit status
+            evaluateFinalPresence()
+        }
+    }
+}
+
+def updateGPSPresence(String gpsPresenceValue) {
+    // Update GPS presence state
+    String currentGPSPresence = device.currentValue("gpsPresence")
+    
+    sendEvent(name: "gpsPresence", value: gpsPresenceValue)
+    state.gpsPresence = gpsPresenceValue
+    
+    if (currentGPSPresence != gpsPresenceValue) {
+        if (debugLogging) log.debug "GPS presence changed from '${currentGPSPresence}' to '${gpsPresenceValue}'"
+        
+        // Re-evaluate final presence when GPS changes (only affects when WiFi is disconnected)
+        evaluateFinalPresence()
+    }
+}
+
+def evaluateFinalPresence() {
+    String wifiPresence = state.wifiPresence ?: "disconnected"
+    String gpsPresence = state.gpsPresence ?: "exited"
+    String currentFinalPresence = device.currentValue("presence") ?: "not present"
+    
+    String finalPresence
+    if (wifiPresence == "connected") {
+        // WiFi connected - always present (only way to change from "not present" to "present")
+        finalPresence = "present"
+    } else {
+        // WiFi disconnected
+        if (gpsPresence == "exited") {
+            // GPS exited - set to not present
+            finalPresence = "not present"
+        } else {
+            // GPS entered but WiFi disconnected - maintain current state
+            // Do not change "not present" to "present" based on GPS alone
+            finalPresence = currentFinalPresence
+        }
+    }
+    
+    updateFinalPresenceState(finalPresence)
+}
+
+def updateFinalPresenceState(String presenceValue) {
+    // Check if presence state is actually changing
+    String currentPresence = device.currentValue("presence")
+    boolean isStateChanging = (currentPresence != presenceValue)
+    
+    // Update presence state and save to state
+    String currentTime = new Date().toString()
+    
+    sendEvent(name: "presence", value: presenceValue)
+    sendEvent(name: "lastActivity", value: currentTime)
+    
+    // Save to state for recovery
+    state.lastPresence = presenceValue
+    state.lastActivity = currentTime
+    
+    // Log presence state changes at info level
+    if (isStateChanging) {
+        log.info "Presence changed from '${currentPresence}' to '${presenceValue}'"
+    }
+    
+    if (debugLogging) log.debug "Final presence updated to: ${presenceValue}, saved to state"
+}
+
+def gpsEnter() {
+    if (debugLogging) log.debug "GPS enter event received"
+    updateGPSPresence("entered")
+}
+
+def gpsExit() {
+    if (debugLogging) log.debug "GPS exit event received"
+    updateGPSPresence("exited")
 }
