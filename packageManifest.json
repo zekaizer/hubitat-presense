@@ -1,12 +1,12 @@
 {
   "packageName": "All-in-One Presence Detection System",
   "author": "Luke Lee",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2025-01-18",
-  "description": "All-in-One Presence Detection System - combines WiFi MQTT detection, GPS geofencing, Anyone logic, manual override, and delayed away in a single driver",
+  "dateReleased": "2025-01-19",
+  "description": "All-in-One Presence Detection System - combines WiFi MQTT detection, GPS geofencing, Anyone logic, manual override, and delayed away. Includes individual presence drivers and composite aggregation driver for 'anyone home' functionality",
   "licenseFile": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/LICENSE",
-  "releaseNotes": "Version 0.1.0 - Major update with WiFi MQTT presence detection and GPS geofencing integration. Features separate state tracking for WiFi (connected/disconnected) and GPS (entered/exited), sophisticated presence logic where WiFi connection triggers immediate presence and GPS only affects presence when WiFi is disconnected. Includes heartbeat timeout monitoring, MAC address normalization, and state recovery functionality.",
+  "releaseNotes": "Version 0.2.0 - Added Composite Presence Driver for 'anyone home' functionality. Parent-Child driver architecture allows aggregating multiple All-in-One Presence devices with configurable OR/AND logic. Enhanced Child Device communication with automatic parent notification on presence changes.",
   "documentationLink": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/README.md",
   "communityLink": "https://community.hubitat.com/t/all-in-one-presence-detection-system/",
   "apps": [],
@@ -18,6 +18,14 @@
       "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/all-in-one-presence.groovy",
       "required": true,
       "primary": true
+    },
+    {
+      "id": "composite-presence",
+      "name": "Composite Presence Driver",
+      "namespace": "zekaizer",
+      "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/composite-presence-driver.groovy",
+      "required": false,
+      "primary": false
     }
   ],
   "tags": [
@@ -27,7 +35,9 @@
     "MQTT",
     "Geofencing",
     "Automation",
-    "All-in-One"
+    "All-in-One",
+    "Composite",
+    "Aggregation"
   ],
   "category": "Convenience"
 }

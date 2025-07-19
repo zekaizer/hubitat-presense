@@ -144,6 +144,15 @@ def depart() {
 def refresh() {
     if (debugLogging) log.debug "Refreshing All-in-One Presence Driver"
     sendEvent(name: "lastActivity", value: new Date().toString())
+    
+    // Notify parent device if this is a component device
+    if (parent) {
+        try {
+            parent.componentRefresh(this.device)
+        } catch (Exception e) {
+            if (debugLogging) log.debug "Failed to notify parent of refresh: ${e.message}"
+        }
+    }
 }
 
 def connectMQTT() {
@@ -415,6 +424,15 @@ def updateFinalPresenceState(String presenceValue) {
     // Save to state for recovery
     state.lastPresence = presenceValue
     state.lastActivity = currentTime
+    
+    // Notify parent device if this is a component device
+    if (parent && isStateChanging) {
+        try {
+            parent.componentPresenceHandler(this.device, presenceValue)
+        } catch (Exception e) {
+            if (debugLogging) log.debug "Failed to notify parent of presence change: ${e.message}"
+        }
+    }
     
     // Log presence state changes at info level
     if (isStateChanging) {
