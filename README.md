@@ -43,14 +43,19 @@ The driver implements the following Hubitat capabilities:
 
 ### Available Commands
 
-- `present()` / `arrive()`: Set presence to "present"
-- `not_present()` / `depart()`: Set presence to "not present"
+- `present()` / `arrive()`: Manual override - set both WiFi and GPS to active states
+- `notPresent()` / `depart()`: Manual override - set both WiFi and GPS to inactive states
+- `gpsEnter()`: GPS geofence entry event
+- `gpsExit()`: GPS geofence exit event
 - `refresh()`: Update the lastActivity timestamp
 
 ### Attributes
 
-- `presence`: enum ["present", "not present"]
+- `presence`: enum ["present", "not present"] - final combined presence state
 - `lastActivity`: string timestamp of last state change
+- `lastHeartbeat`: string timestamp of last WiFi heartbeat received
+- `wifiPresence`: enum ["connected", "disconnected"] - WiFi connection status
+- `gpsPresence`: enum ["entered", "exited"] - GPS geofence status
 
 ## Configuration
 
@@ -78,6 +83,11 @@ END-IF
 
 ## Advanced Features
 
+### WiFi MQTT Detection
+- MQTT topics: `UnifiU6Pro/status/mac-{macaddr}/lastseen/epoch` and `AsusAC68U/status/mac-{macaddr}/lastseen/epoch`
+- MAC address normalization: supports both colon (:) and dash (-) formats
+- Heartbeat timeout detection with configurable timeout (default: 60 seconds, minimum: 5 seconds)
+
 ### GPS Commands Support
 The driver includes support for GPS-based presence detection through specialized commands:
 - `gpsEnter()`: Handle GPS geofence entry
@@ -86,6 +96,28 @@ The driver includes support for GPS-based presence detection through specialized
 ### Heartbeat Monitoring
 - Implements event-based heartbeat system for improved device tracking
 - Maintains `lastHeartbeat` attribute for connection monitoring
+
+## Final Presence Logic
+
+The driver uses a sophisticated multi-source presence detection system:
+
+### Decision Rules
+1. **WiFi Connected**: Immediate "present" status
+   - When WiFi connects → immediately set presence to "present"
+   - WiFi connection also assumes GPS entered
+
+2. **WiFi Disconnected**: GPS-based decision
+   - GPS exited → set presence to "not present"
+   - GPS entered → maintain current presence state (no automatic "present" change)
+
+3. **State Changes**
+   - **"not present" → "present"**: Only through WiFi connection
+   - **"present" → "not present"**: Through WiFi disconnection + GPS exit
+
+### Separate State Tracking
+- `wifiPresence`: "connected" / "disconnected"
+- `gpsPresence`: "entered" / "exited"  
+- `presence`: "present" / "not present" (final combined state)
 
 ## Technical Specifications
 
