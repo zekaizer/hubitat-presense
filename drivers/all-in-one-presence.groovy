@@ -262,7 +262,12 @@ def updateWiFiPresence(String wifiPresenceValue) {
         // Apply presence logic
         if (wifiPresenceValue == "connected") {
             // WiFi connected - immediate presence + assume GPS entered
-            updateGPSPresence("entered")
+            // Set GPS to entered silently without triggering evaluateFinalPresence
+            sendEvent(name: "gpsPresence", value: "entered")
+            state.gpsPresence = "entered"
+            if (debugLogging) log.debug "GPS presence set to 'entered' (assumed from WiFi connection)"
+            
+            // Evaluate final presence only once
             evaluateFinalPresence()
         } else {
             // WiFi disconnected - determine based on GPS enter/exit status
