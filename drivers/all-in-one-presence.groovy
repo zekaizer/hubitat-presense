@@ -16,7 +16,7 @@ metadata {
         attribute "lastHeartbeat", "string"
         
         command "present"
-        command "not_present"
+        command "notPresent"
         command "arrive"
         command "depart"
     }
@@ -31,6 +31,7 @@ metadata {
             input "mqttUsername", "string", title: "MQTT Username (optional)", required: false
             input "mqttPassword", "password", title: "MQTT Password (optional)", required: false
             input "macAddress", "string", title: "MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)", required: true
+            input "heartbeatTimeout", "number", title: "Heartbeat Timeout (seconds)", defaultValue: 60, range: "5..3600", required: true
         }
     }
 }
@@ -53,6 +54,11 @@ def initialize() {
     
     // Initialize MQTT connection
     connectMQTT()
+    
+    // Start heartbeat timeout monitoring if we have a saved heartbeat
+    if (state.lastHeartbeatEpoch) {
+        scheduleHeartbeatTimeoutCheck()
+    }
 }
 
 def parse(String description) {
@@ -92,6 +98,7 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         String heartbeatStr = heartbeatDate.toString()
         sendEvent(name: "lastHeartbeat", value: heartbeatStr)
         state.lastHeartbeat = heartbeatStr
+        state.lastHeartbeatEpoch = epochTime
         
         // Check if heartbeat is recent (within last 30 seconds)
         Long timeDiff = currentTime - epochTime
@@ -101,6 +108,9 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
                 if (debugLogging) log.debug "Setting presence to present (WiFi heartbeat)"
                 updatePresenceState("present")
             }
+            
+            // Schedule heartbeat timeout check
+            scheduleHeartbeatTimeoutCheck()
         } else {
             if (debugLogging) log.debug "Heartbeat is too old (${timeDiff} seconds), ignoring"
         }
@@ -115,7 +125,7 @@ def present() {
     updatePresenceState("present")
 }
 
-def not_present() {
+def notPresent() {
     if (debugLogging) log.debug "Setting presence to not present"
     updatePresenceState("not present")
 }
@@ -125,7 +135,7 @@ def arrive() {
 }
 
 def depart() {
-    not_present()
+    notPresent()
 }
 
 def refresh() {
@@ -212,6 +222,7 @@ def restoreState() {
     String savedPresence = state.lastPresence
     String savedActivity = state.lastActivity
     String savedHeartbeat = state.lastHeartbeat
+    Long savedHeartbeatEpoch = state.lastHeartbeatEpoch
     
     if (savedPresence) {
         if (debugLogging) log.debug "Restoring saved presence state: ${savedPresence}"
@@ -233,6 +244,11 @@ def restoreState() {
     if (savedHeartbeat) {
         sendEvent(name: "lastHeartbeat", value: savedHeartbeat)
     }
+    
+    // Restore heartbeat epoch for timeout monitoring
+    if (savedHeartbeatEpoch && debugLogging) {
+        log.debug "Restored heartbeat epoch: ${savedHeartbeatEpoch}"
+    }
 }
 
 def updatePresenceState(String presenceValue) {
@@ -247,4 +263,50 @@ def updatePresenceState(String presenceValue) {
     state.lastActivity = currentTime
     
     if (debugLogging) log.debug "Presence updated to: ${presenceValue}, saved to state"
+}
+
+def scheduleHeartbeatTimeoutCheck() {
+    // Get timeout setting (default 60 seconds, minimum 5 seconds)
+    Integer timeoutSeconds = Math.max(5, settings.heartbeatTimeout ?: 60)
+    
+    // Schedule timeout check (overwrite any existing schedule)
+    runIn(timeoutSeconds, "checkHeartbeatTimeout", [overwrite: true])
+    
+    if (debugLogging) log.debug "Scheduled heartbeat timeout check in ${timeoutSeconds} seconds"
+}
+
+def checkHeartbeatTimeout() {
+    try {
+        Long lastHeartbeatEpoch = state.lastHeartbeatEpoch
+        if (!lastHeartbeatEpoch) {
+            if (debugLogging) log.debug "No heartbeat epoch stored, skipping timeout check"
+            return
+        }
+        
+        Long currentTime = now() / 1000 // Convert to seconds
+        Long timeSinceLastHeartbeat = currentTime - lastHeartbeatEpoch
+        Integer timeoutSeconds = Math.max(5, settings.heartbeatTimeout ?: 60)
+        
+        if (debugLogging) {
+            log.debug "Checking heartbeat timeout: ${timeSinceLastHeartbeat}s since last heartbeat (timeout: ${timeoutSeconds}s)"
+        }
+        
+        if (timeSinceLastHeartbeat > timeoutSeconds) {
+            // Heartbeat timeout - set presence to not present
+            if (device.currentValue("presence") == "present") {
+                if (debugLogging) log.debug "Heartbeat timeout detected, setting presence to 'not present'"
+                updatePresenceState("not present")
+            }
+        } else {
+            // Still within timeout period, schedule another check
+            Integer remainingTime = timeoutSeconds - timeSinceLastHeartbeat
+            if (remainingTime > 0) {
+                runIn(remainingTime.toInteger(), "checkHeartbeatTimeout", [overwrite: true])
+                if (debugLogging) log.debug "Rescheduled heartbeat timeout check in ${remainingTime} seconds"
+            }
+        }
+        
+    } catch (Exception e) {
+        log.error "Failed to check heartbeat timeout: ${e.message}"
+    }
 }
