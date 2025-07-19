@@ -22,9 +22,11 @@ metadata {
         command "notPresent"
         command "arrive"
         command "depart"
-        command "addChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"]]
-        command "removeChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address of device to remove"]]
+        command "addChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"], [name:"deviceLabel", type:"STRING", description:"Device Label (optional)"]]
+        command "removeChildDevice", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) or MAC Address of device to remove"]]
         command "removeAllChildren"
+        command "updateChildMacAddress", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newMacAddress", type:"STRING", description:"New MAC Address"]]
+        command "updateChildLabel", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newLabel", type:"STRING", description:"New Device Label"]]
     }
     
     preferences {
@@ -122,8 +124,8 @@ def refresh() {
     sendEvent(name: "lastActivity", value: new Date().toString())
 }
 
-def addChildDevice(macAddress = null) {
-    if (debugLogging) log.debug "Adding child device with MAC address: ${macAddress}"
+def addChildDevice(macAddress = null, deviceLabel = null) {
+    if (debugLogging) log.debug "Adding child device with MAC address: ${macAddress}, label: ${deviceLabel}"
     
     if (!macAddress) {
         log.error "MAC address is required to add child device"
@@ -131,25 +133,27 @@ def addChildDevice(macAddress = null) {
     }
     
     try {
-        // Normalize MAC address and create DNI
-        String normalizedMac = normalizeMacAddress(macAddress)
-        def childDeviceNetworkId = "composite-presence-${normalizedMac}"
-        
         // Check if child with this MAC already exists
-        def existingChild = getChildDevice(childDeviceNetworkId)
+        def existingChild = findChildByMacAddress(macAddress)
         if (existingChild) {
             log.warn "Child device with MAC address ${macAddress} already exists: ${existingChild.getDisplayName()}"
             return existingChild
         }
         
+        // Generate UUID-based DNI
+        def childDeviceNetworkId = "composite-presence-${UUID.randomUUID().toString()}"
+        
         // Create a new All-in-One Presence child device
+        String normalizedMac = normalizeMacAddress(macAddress)
+        String finalLabel = deviceLabel ?: "Presence ${normalizedMac}"
+        
         def childDevice = addChildDevice(
             "zekaizer", 
             "All-in-One Presence Driver", 
             childDeviceNetworkId,
             [
                 name: "All-in-One Presence Child",
-                label: "Presence ${normalizedMac}",
+                label: finalLabel,
                 isComponent: true
             ]
         )
@@ -195,30 +199,38 @@ def addChildDevice(macAddress = null) {
     return null
 }
 
-def removeChildDevice(macAddress) {
-    if (debugLogging) log.debug "Removing child device with MAC address: ${macAddress}"
+def removeChildDevice(deviceId) {
+    if (debugLogging) log.debug "Removing child device with ID: ${deviceId}"
     
-    if (!macAddress) {
-        log.error "MAC address is required to remove child device"
+    if (!deviceId) {
+        log.error "Device ID is required to remove child device"
         return
     }
     
     try {
-        // Normalize MAC address and create DNI
-        String normalizedMac = normalizeMacAddress(macAddress)
-        def childDeviceNetworkId = "composite-presence-${normalizedMac}"
+        def childDevice = null
         
-        def childDevice = getChildDevice(childDeviceNetworkId)
+        // Try to find by DNI first
+        childDevice = getChildDevice(deviceId)
+        
+        // If not found by DNI, try to find by MAC address
+        if (!childDevice) {
+            childDevice = findChildByMacAddress(deviceId)
+        }
+        
         if (childDevice) {
-            // Unsubscribe from MQTT topics for this MAC address
-            unsubscribeFromMacAddress(macAddress)
+            // Get MAC address before deletion for MQTT unsubscribe
+            def macAddress = childDevice.getSetting("macAddress")
+            if (macAddress) {
+                unsubscribeFromMacAddress(macAddress)
+            }
             
-            deleteChildDevice(childDeviceNetworkId)
+            deleteChildDevice(childDevice.getDeviceNetworkId())
             if (debugLogging) log.debug "Successfully removed child device: ${childDevice.getDisplayName()}"
             updateChildStatistics()
             evaluateCompositePresence()
         } else {
-            log.warn "Child device not found for MAC address: ${macAddress}"
+            log.warn "Child device not found for ID: ${deviceId}"
         }
     } catch (Exception e) {
         log.error "Exception while removing child device: ${e.message}"
@@ -473,6 +485,87 @@ def mqttClientStatus(String status) {
     }
 }
 
+def findChildByMacAddress(String macAddress) {
+    // Find child device by MAC address setting
+    def children = getChildDevices()
+    return children.find { child ->
+        def childMac = child.getSetting("macAddress")
+        return childMac && normalizeMacAddress(childMac) == normalizeMacAddress(macAddress)
+    }
+}
+
+def updateChildMacAddress(String deviceId, String newMacAddress) {
+    if (debugLogging) log.debug "Updating MAC address for device ${deviceId} to ${newMacAddress}"
+    
+    if (!deviceId || !newMacAddress) {
+        log.error "Device ID and new MAC address are required"
+        return false
+    }
+    
+    try {
+        // Find the child device
+        def childDevice = getChildDevice(deviceId)
+        if (!childDevice) {
+            log.error "Child device not found: ${deviceId}"
+            return false
+        }
+        
+        // Check if new MAC address is already in use
+        def existingChild = findChildByMacAddress(newMacAddress)
+        if (existingChild && existingChild.getDeviceNetworkId() != deviceId) {
+            log.error "MAC address ${newMacAddress} is already in use by another child device"
+            return false
+        }
+        
+        // Get old MAC address for MQTT unsubscribe
+        def oldMacAddress = childDevice.getSetting("macAddress")
+        if (oldMacAddress) {
+            unsubscribeFromMacAddress(oldMacAddress)
+        }
+        
+        // Update MAC address setting
+        childDevice.updateSetting("macAddress", newMacAddress)
+        
+        // Subscribe to new MAC address topics
+        subscribeToMacAddress(newMacAddress)
+        
+        if (debugLogging) log.debug "Successfully updated MAC address for ${childDevice.getDisplayName()}"
+        return true
+        
+    } catch (Exception e) {
+        log.error "Exception while updating child MAC address: ${e.message}"
+        return false
+    }
+}
+
+def updateChildLabel(String deviceId, String newLabel) {
+    if (debugLogging) log.debug "Updating label for device ${deviceId} to ${newLabel}"
+    
+    if (!deviceId || !newLabel) {
+        log.error "Device ID and new label are required"
+        return false
+    }
+    
+    try {
+        // Find the child device
+        def childDevice = getChildDevice(deviceId)
+        if (!childDevice) {
+            log.error "Child device not found: ${deviceId}"
+            return false
+        }
+        
+        // Update device label
+        childDevice.setLabel(newLabel)
+        
+        if (debugLogging) log.debug "Successfully updated label for ${childDevice.getDisplayName()}"
+        return true
+        
+    } catch (Exception e) {
+        log.error "Exception while updating child label: ${e.message}"
+        return false
+    }
+}
+
 def handleWiFiPresenceHeartbeat(String topic, String payload) {
     try {
         // Extract MAC address from topic
@@ -485,9 +578,9 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         
         String macFromTopic = macMatch[0][1]
         
-        // Find the corresponding child device
-        def childDeviceNetworkId = "composite-presence-${macFromTopic}"
-        def childDevice = getChildDevice(childDeviceNetworkId)
+        // Find the corresponding child device by MAC address
+        String macAddress = macFromTopic.replace("-", ":")  // Convert back to colon format
+        def childDevice = findChildByMacAddress(macAddress)
         
         if (!childDevice) {
             if (debugLogging) log.debug "No child device found for MAC: ${macFromTopic}"
