@@ -125,7 +125,7 @@ The driver uses a sophisticated multi-source presence detection system:
 - **Namespace**: zekaizer
 - **Author**: Luke Lee
 - **License**: MIT License
-- **Version**: 0.0.1
+- **Version**: 0.1.0
 
 ## Troubleshooting
 
@@ -154,11 +154,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Changelog
 
+### Version 0.1.0 (2025-01-19)
+- Major presence logic overhaul with separate WiFi and GPS state tracking
+- WiFi MQTT presence detection with configurable heartbeat timeout
+- GPS geofencing integration with enter/exit events
+- Sophisticated presence decision logic (WiFi immediate, GPS conditional)
+- State recovery functionality for hub restarts
+- MAC address normalization (colon and dash format support)
+- Enhanced logging with presence state change notifications
+- New attributes: wifiPresence, gpsPresence, lastHeartbeat
+
 ### Version 0.0.1 (2025-01-18)
 - Initial release
 - Basic presence detection functionality
-- WiFi MQTT detection support
-- GPS geofencing integration
 - Manual override capabilities
-- Core presence detection functionality
 - Debug logging support
