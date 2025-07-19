@@ -10,18 +10,12 @@
 
 metadata {
     definition (name: "Composite Presence Driver", namespace: "zekaizer", author: "Luke Lee", importUrl: "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/composite-presence-driver.groovy") {
-        capability "PresenceSensor"
         capability "Refresh"
         
-        attribute "presence", "enum", ["present", "not present"]
         attribute "lastActivity", "string"
         attribute "childCount", "number"
         attribute "presentCount", "number"
         
-        command "present"
-        command "notPresent"
-        command "arrive"
-        command "depart"
         command "createChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"], [name:"deviceLabel", type:"STRING", description:"Device Label (optional)"]]
         command "removeChildDevice", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) or MAC Address of device to remove"]]
         command "removeAllChildren"
@@ -32,12 +26,6 @@ metadata {
     preferences {
         section("Settings") {
             input "debugLogging", "bool", title: "Enable Debug Logging", defaultValue: false, required: false
-            input "aggregationMode", "enum", title: "Aggregation Mode", 
-                  options: ["anyone": "Anyone Present (OR logic)", "everyone": "Everyone Present (AND logic)"], 
-                  defaultValue: "anyone", required: true
-        }
-        section("Child Device Management") {
-            input "autoAddChildren", "bool", title: "Auto-discover All-in-One Presence devices", defaultValue: false, required: false
         }
         section("Default MQTT Settings for Child Devices") {
             input "defaultMqttBroker", "string", title: "Default MQTT Broker IP Address", required: false
@@ -68,14 +56,12 @@ def initialize() {
     // Initialize MQTT connection
     connectMQTT()
     
-    // Auto-discover children if enabled
-    if (settings.autoAddChildren) {
-        autoDiscoverChildren()
-    }
     
-    // Update child count and evaluate presence
+    // Create or find Anyone Presence child device
+    createAnyonePresenceDevice()
+    
+    // Update child count (which will also update anyone presence)
     updateChildStatistics()
-    evaluateCompositePresence()
 }
 
 def parse(String description) {
@@ -99,29 +85,11 @@ def parse(String description) {
     }
 }
 
-def present() {
-    if (debugLogging) log.debug "Manual present command received"
-    updatePresenceState("present")
-}
-
-def notPresent() {
-    if (debugLogging) log.debug "Manual not present command received"
-    updatePresenceState("not present")
-}
-
-def arrive() {
-    present()
-}
-
-def depart() {
-    notPresent()
-}
 
 def refresh() {
     if (debugLogging) log.debug "Refreshing Composite Presence Driver"
-    // Update statistics first, then evaluate composite presence
+    // Update statistics (which will also update anyone presence)
     updateChildStatistics()
-    evaluateCompositePresence()
     sendEvent(name: "lastActivity", value: new Date().toString())
 }
 
@@ -147,8 +115,8 @@ def createChildDevice(macAddress = null, deviceLabel = null) {
             return existingChild
         }
         
-        // Generate UUID-based DNI
-        def childDeviceNetworkId = "composite-presence-${UUID.randomUUID().toString()}"
+        // Generate UUID-based DNI with device.id prefix
+        def childDeviceNetworkId = "composite-presence-${device.id}-${UUID.randomUUID().toString()}"
         
         // Create a new All-in-One Presence child device
         String normalizedMac = normalizeMacAddress(macAddress)
@@ -219,7 +187,6 @@ def removeChildDevice(deviceId) {
             deleteChildDevice(childDevice.getDeviceNetworkId())
             if (debugLogging) log.debug "Successfully removed child device: ${childDevice.getDisplayName()}"
             updateChildStatistics()
-            evaluateCompositePresence()
         } else {
             log.warn "Child device not found for ID: ${deviceId}"
         }
@@ -238,18 +205,50 @@ def removeAllChildren() {
         }
         if (debugLogging) log.debug "Successfully removed ${children.size()} child devices"
         updateChildStatistics()
-        evaluateCompositePresence()
     } catch (Exception e) {
         log.error "Exception while removing all child devices: ${e.message}"
     }
 }
 
-def autoDiscoverChildren() {
-    if (debugLogging) log.debug "Auto-discovering All-in-One Presence devices"
+
+def createAnyonePresenceDevice() {
+    // Check if Anyone Presence device already exists
+    def anyoneDni = "composite-presence-${device.id}-anyone"
+    def anyoneDevice = getChildDevice(anyoneDni)
     
-    // This would need to be implemented based on Hubitat's device discovery capabilities
-    // For now, this is a placeholder for future enhancement
-    log.info "Auto-discovery not yet implemented - please add children manually"
+    if (!anyoneDevice) {
+        try {
+            if (debugLogging) log.debug "Creating Anyone Presence child device using built-in Generic Component Presence Sensor"
+            
+            anyoneDevice = addChildDevice(
+                "hubitat",
+                "Generic Component Presence Sensor",
+                anyoneDni,
+                [
+                    name: "Anyone Presence",
+                    label: "Anyone Presence",
+                    isComponent: true
+                ]
+            )
+            
+            if (anyoneDevice) {
+                if (debugLogging) log.debug "Successfully created Anyone Presence device: ${anyoneDevice.getDisplayName()}"
+                
+                // Mark this as the special "anyone" device
+                anyoneDevice.updateDataValue("deviceType", "anyone")
+                
+                // Set initial state to not present
+                anyoneDevice.parse([[name: "presence", value: "not present", descriptionText: "${anyoneDevice.displayName} is not present"]])
+            } else {
+                log.error "Failed to create Anyone Presence device"
+            }
+            
+        } catch (Exception e) {
+            log.error "Exception while creating Anyone Presence device: ${e.message}"
+        }
+    } else {
+        if (debugLogging) log.debug "Anyone Presence device already exists: ${anyoneDevice.getDisplayName()}"
+    }
 }
 
 def configureChildDevice(data) {
@@ -289,7 +288,7 @@ def componentPresenceHandler(childDevice, presenceValue) {
     log.info "Child device ${childDevice.getDisplayName()} presence changed to: ${presenceValue}"
     
     // Use runIn to ensure child device state is fully updated before checking statistics
-    runIn(1, "updateChildStatisticsDelayed", [overwrite: false])
+    runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
 }
 
 def componentRefresh(childDevice) {
@@ -303,17 +302,23 @@ def updateChildStatisticsDelayed() {
     // Delayed version of updateChildStatistics to handle timing issues
     if (debugLogging) log.debug "Delayed child statistics update triggered"
     updateChildStatistics()
-    evaluateCompositePresence()
 }
 
 def updateChildStatistics() {
     def children = getChildDevices()
-    def childCount = children.size()
+    def childCount = 0
     def presentCount = 0
     
-    if (debugLogging) log.debug "Updating child statistics for ${childCount} children:"
+    if (debugLogging) log.debug "Updating child statistics for ${children.size()} children:"
     
     children.each { child ->
+        // Only count "All-in-One Presence Child" devices, skip Anyone Presence
+        if (child.name != "All-in-One Presence Child") {
+            log.info "  Skipping non-individual device: ${child.getDisplayName()} (name: ${child.name})"
+            return
+        }
+        
+        childCount++
         def presenceValue = child.currentValue("presence")
         def macAddress = child.getDataValue("macAddress") ?: child.getSetting("macAddress")
         
@@ -330,73 +335,36 @@ def updateChildStatistics() {
     sendEvent(name: "presentCount", value: presentCount)
     
     if (debugLogging) log.debug "Child statistics updated: ${presentCount}/${childCount} present"
+    
+    // Update anyone presence immediately with the calculated presentCount
+    updateAnyonePresence(presentCount)
 }
 
-def evaluateCompositePresence() {
-    def children = getChildDevices()
-    def aggregationMode = settings.aggregationMode ?: "anyone"
-    def compositePresence = "not present"
-    
-    if (children.size() == 0) {
-        // No children - default to not present
-        compositePresence = "not present"
-        if (debugLogging) log.debug "No child devices - setting composite presence to 'not present'"
-    } else {
-        // Get the current presentCount from device attribute
-        def presentCount = device.currentValue("presentCount") ?: 0
-        
-        if (aggregationMode == "anyone") {
-            // OR logic - any child present means composite is present
-            compositePresence = (presentCount > 0) ? "present" : "not present"
-        } else if (aggregationMode == "everyone") {
-            // AND logic - all children must be present
-            compositePresence = (presentCount == children.size()) ? "present" : "not present"
-        }
-        
-        if (debugLogging) {
-            log.debug "Composite presence evaluation (${aggregationMode}): ${presentCount}/${children.size()} present -> ${compositePresence}"
+def updateAnyonePresence(presentCount) {
+    def anyoneDni = "composite-presence-${device.id}-anyone"
+    def anyoneDevice = getChildDevice(anyoneDni)
+    if (!anyoneDevice) {
+        createAnyonePresenceDevice()
+        anyoneDevice = getChildDevice(anyoneDni)
+        if (!anyoneDevice) {
+            return
         }
     }
     
-    updatePresenceState(compositePresence)
+    def anyonePresent = (presentCount > 0) ? "present" : "not present"
+
+    log.info "Updating Anyone Presence to: ${anyonePresent} (presentCount: ${presentCount})"
+    def currentAnyonePresence = anyoneDevice.currentValue("presence")
+    if (currentAnyonePresence != anyonePresent) {
+        anyoneDevice.parse([[name: "presence", value: anyonePresent, descriptionText: "${anyoneDevice.displayName} is ${anyonePresent}"]])
+    }
 }
 
-def updatePresenceState(String presenceValue) {
-    // Check if presence state is actually changing
-    String currentPresence = device.currentValue("presence")
-    boolean isStateChanging = (currentPresence != presenceValue)
-    
-    // Update presence state and save to state
-    String currentTime = new Date().toString()
-    
-    sendEvent(name: "presence", value: presenceValue)
-    sendEvent(name: "lastActivity", value: currentTime)
-    
-    // Save to state for recovery
-    state.lastPresence = presenceValue
-    state.lastActivity = currentTime
-    
-    // Log presence state changes at info level
-    if (isStateChanging) {
-        log.info "Composite presence changed from '${currentPresence}' to '${presenceValue}'"
-    }
-    
-    if (debugLogging) log.debug "Composite presence updated to: ${presenceValue}, saved to state"
-}
+
 
 def restoreState() {
-    // Restore saved presence states or set defaults
-    String savedPresence = state.lastPresence
+    // Restore saved activity or set default
     String savedActivity = state.lastActivity
-    
-    if (savedPresence) {
-        if (debugLogging) log.debug "Restoring saved composite presence state: ${savedPresence}"
-        sendEvent(name: "presence", value: savedPresence)
-    } else {
-        if (debugLogging) log.debug "No saved presence state, setting to 'not present'"
-        sendEvent(name: "presence", value: "not present")
-        state.lastPresence = "not present"
-    }
     
     if (savedActivity) {
         sendEvent(name: "lastActivity", value: savedActivity)
