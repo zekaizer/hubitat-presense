@@ -294,12 +294,9 @@ def componentPresenceHandler(childDevice, presenceValue) {
 
 def componentRefresh(childDevice) {
     // Handle refresh requests from child devices
-    if (debugLogging) log.debug "Child device ${childDevice.getDisplayName()} requested refresh"
-    
-    // Don't call childDevice.refresh() to avoid infinite loop
-    // Just update statistics when child notifies us of refresh
-    updateChildStatistics()
-    evaluateCompositePresence()
+    // IMPORTANT: Do nothing here to prevent infinite loop
+    // Statistics will be updated through componentPresenceHandler when presence changes
+    if (debugLogging) log.debug "Child device ${childDevice.getDisplayName()} refresh acknowledged"
 }
 
 def updateChildStatisticsDelayed() {
