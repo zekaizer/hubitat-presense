@@ -218,36 +218,36 @@ def createAnyonePresenceDevice() {
     
     if (!anyoneDevice) {
         try {
-            if (debugLogging) log.debug "Creating Anyone Presence child device using built-in Generic Component Presence Sensor"
+            if (debugLogging) log.debug "Creating Anyone Motion child device using built-in Generic Component Motion Sensor"
             
             anyoneDevice = addChildDevice(
                 "hubitat",
-                "Generic Component Presence Sensor",
+                "Generic Component Motion Sensor",
                 anyoneDni,
                 [
-                    name: "Anyone Presence",
-                    label: "Anyone Presence",
+                    name: "Anyone Motion",
+                    label: "Anyone Motion",
                     isComponent: true
                 ]
             )
             
             if (anyoneDevice) {
-                if (debugLogging) log.debug "Successfully created Anyone Presence device: ${anyoneDevice.getDisplayName()}"
+                if (debugLogging) log.debug "Successfully created Anyone Motion device: ${anyoneDevice.getDisplayName()}"
                 
                 // Mark this as the special "anyone" device
                 anyoneDevice.updateDataValue("deviceType", "anyone")
                 
-                // Set initial state to not present
-                anyoneDevice.parse([[name: "presence", value: "not present", descriptionText: "${anyoneDevice.displayName} is not present"]])
+                // Set initial state to inactive
+                anyoneDevice.parse([[name: "motion", value: "inactive", descriptionText: "${anyoneDevice.displayName} is inactive"]])
             } else {
-                log.error "Failed to create Anyone Presence device"
+                log.error "Failed to create Anyone Motion device"
             }
             
         } catch (Exception e) {
-            log.error "Exception while creating Anyone Presence device: ${e.message}"
+            log.error "Exception while creating Anyone Motion device: ${e.message}"
         }
     } else {
-        if (debugLogging) log.debug "Anyone Presence device already exists: ${anyoneDevice.getDisplayName()}"
+        if (debugLogging) log.debug "Anyone Motion device already exists: ${anyoneDevice.getDisplayName()}"
     }
 }
 
@@ -351,12 +351,12 @@ def updateAnyonePresence(presentCount) {
         }
     }
     
-    def anyonePresent = (presentCount > 0) ? "present" : "not present"
+    def anyoneMotion = (presentCount > 0) ? "active" : "inactive"
 
-    log.info "Updating Anyone Presence to: ${anyonePresent} (presentCount: ${presentCount})"
-    def currentAnyonePresence = anyoneDevice.currentValue("presence")
-    if (currentAnyonePresence != anyonePresent) {
-        anyoneDevice.parse([[name: "presence", value: anyonePresent, descriptionText: "${anyoneDevice.displayName} is ${anyonePresent}"]])
+    log.info "Updating Anyone Motion to: ${anyoneMotion} (presentCount: ${presentCount})"
+    def currentAnyoneMotion = anyoneDevice.currentValue("motion")
+    if (currentAnyoneMotion != anyoneMotion) {
+        anyoneDevice.parse([[name: "motion", value: anyoneMotion, descriptionText: "${anyoneDevice.displayName} is ${anyoneMotion}"]])
     }
 }
 
