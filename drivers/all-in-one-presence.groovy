@@ -25,12 +25,8 @@ metadata {
     }
     
     preferences {
-        section("Settings") {
+        section("Component Device") {
             input "debugLogging", "bool", title: "Enable Debug Logging", defaultValue: false, required: false
-        }
-        section("Device Settings") {
-            input "macAddress", "string", title: "MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)", required: true
-            input "heartbeatTimeout", "number", title: "Heartbeat Timeout (seconds)", defaultValue: 60, range: "5..3600", required: true
         }
     }
 }
@@ -222,8 +218,12 @@ def updatePresenceState(String presenceValue) {
 }
 
 def scheduleHeartbeatTimeoutCheck() {
-    // Get timeout setting (default 60 seconds, minimum 5 seconds)
-    Integer timeoutSeconds = Math.max(5, settings.heartbeatTimeout ?: 60)
+    // Get timeout from parent or use default (60 seconds, minimum 5 seconds)
+    Integer timeoutSeconds = 60
+    if (parent) {
+        def parentTimeout = parent.getSetting("defaultHeartbeatTimeout")
+        timeoutSeconds = Math.max(5, parentTimeout ?: 60)
+    }
     
     // Schedule timeout check (overwrite any existing schedule)
     runIn(timeoutSeconds, "checkHeartbeatTimeout", [overwrite: true])
@@ -241,7 +241,13 @@ def checkHeartbeatTimeout() {
         
         Long currentTime = now() / 1000 // Convert to seconds
         Long timeSinceLastHeartbeat = currentTime - lastHeartbeatEpoch
-        Integer timeoutSeconds = Math.max(5, settings.heartbeatTimeout ?: 60)
+        
+        // Get timeout from parent or use default
+        Integer timeoutSeconds = 60
+        if (parent) {
+            def parentTimeout = parent.getSetting("defaultHeartbeatTimeout")
+            timeoutSeconds = Math.max(5, parentTimeout ?: 60)
+        }
         
         if (debugLogging) {
             log.debug "Checking heartbeat timeout: ${timeSinceLastHeartbeat}s since last heartbeat (timeout: ${timeoutSeconds}s)"
@@ -348,11 +354,6 @@ def updateFinalPresenceState(String presenceValue) {
         } catch (Exception e) {
             if (debugLogging) log.debug "Failed to notify parent of presence change: ${e.message}"
         }
-    }
-    
-    // Log presence state changes at info level
-    if (isStateChanging) {
-        log.info "Presence changed from '${currentPresence}' to '${presenceValue}'"
     }
     
     if (debugLogging) log.debug "Final presence updated to: ${presenceValue}, saved to state"

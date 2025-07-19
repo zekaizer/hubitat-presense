@@ -22,7 +22,7 @@ metadata {
         command "notPresent"
         command "arrive"
         command "depart"
-        command "addChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"], [name:"deviceLabel", type:"STRING", description:"Device Label (optional)"]]
+        command "createChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"], [name:"deviceLabel", type:"STRING", description:"Device Label (optional)"]]
         command "removeChildDevice", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) or MAC Address of device to remove"]]
         command "removeAllChildren"
         command "updateChildMacAddress", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newMacAddress", type:"STRING", description:"New MAC Address"]]
@@ -119,16 +119,23 @@ def depart() {
 
 def refresh() {
     if (debugLogging) log.debug "Refreshing Composite Presence Driver"
+    // Update statistics first, then evaluate composite presence
     updateChildStatistics()
     evaluateCompositePresence()
     sendEvent(name: "lastActivity", value: new Date().toString())
 }
 
-def addChildDevice(macAddress = null, deviceLabel = null) {
-    if (debugLogging) log.debug "Adding child device with MAC address: ${macAddress}, label: ${deviceLabel}"
+def createChildDevice(macAddress = null, deviceLabel = null) {
+    if (debugLogging) log.debug "Creating child device with MAC address: ${macAddress}, label: ${deviceLabel}"
     
-    if (!macAddress) {
-        log.error "MAC address is required to add child device"
+    if (!macAddress || macAddress.trim().isEmpty()) {
+        log.error "Valid MAC address is required to create child device"
+        return null
+    }
+    
+    // Validate MAC address format
+    if (!isValidMacAddress(macAddress)) {
+        log.error "Invalid MAC address format: ${macAddress}. Expected format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF"
         return null
     }
     
@@ -147,7 +154,7 @@ def addChildDevice(macAddress = null, deviceLabel = null) {
         String normalizedMac = normalizeMacAddress(macAddress)
         String finalLabel = deviceLabel ?: "Presence ${normalizedMac}"
         
-        def childDevice = addChildDevice(
+        def childDevice = this.addChildDevice(
             "zekaizer", 
             "All-in-One Presence Driver", 
             childDeviceNetworkId,
@@ -161,39 +168,23 @@ def addChildDevice(macAddress = null, deviceLabel = null) {
         if (childDevice) {
             if (debugLogging) log.debug "Successfully created child device: ${childDevice.getDisplayName()} with DNI: ${childDeviceNetworkId}"
             
-            // Set the MAC address and default MQTT settings in the child device
-            childDevice.updateSetting("macAddress", macAddress)
+            // Store MAC address in child device data for immediate access
+            childDevice.updateDataValue("macAddress", macAddress)
+            if (debugLogging) log.debug "Set MAC address data value '${macAddress}' for child device"
             
-            // Apply default MQTT settings if configured
-            if (settings.defaultMqttBroker) {
-                childDevice.updateSetting("mqttBroker", settings.defaultMqttBroker)
-            }
-            if (settings.defaultMqttPort) {
-                childDevice.updateSetting("mqttPort", settings.defaultMqttPort)
-            }
-            if (settings.defaultMqttUsername) {
-                childDevice.updateSetting("mqttUsername", settings.defaultMqttUsername)
-            }
-            if (settings.defaultMqttPassword) {
-                childDevice.updateSetting("mqttPassword", settings.defaultMqttPassword)
-            }
-            if (settings.defaultHeartbeatTimeout) {
-                childDevice.updateSetting("heartbeatTimeout", settings.defaultHeartbeatTimeout)
-            }
+            // Use runIn to delay setting configuration after device is fully created
+            runIn(1, "configureChildDevice", [data: [deviceId: childDeviceNetworkId, macAddress: macAddress]])
             
-            // Initialize the child device
-            childDevice.initialize()
-            
-            // Subscribe to MQTT topics for this MAC address
-            subscribeToMacAddress(macAddress)
+            // Subscribe to MQTT topics will be done after configuration is complete
             
             updateChildStatistics()
             return childDevice
         } else {
-            log.error "Failed to create child device"
+            log.error "Failed to create child device - addChildDevice returned null"
         }
     } catch (Exception e) {
-        log.error "Exception while adding child device: ${e.message}"
+        log.error "Exception while creating child device: ${e.message}"
+        log.error "Stack trace: ${e.getStackTrace()}"
     }
     
     return null
@@ -220,7 +211,7 @@ def removeChildDevice(deviceId) {
         
         if (childDevice) {
             // Get MAC address before deletion for MQTT unsubscribe
-            def macAddress = childDevice.getSetting("macAddress")
+            def macAddress = childDevice.getDataValue("macAddress") ?: childDevice.getSetting("macAddress")
             if (macAddress) {
                 unsubscribeFromMacAddress(macAddress)
             }
@@ -261,9 +252,44 @@ def autoDiscoverChildren() {
     log.info "Auto-discovery not yet implemented - please add children manually"
 }
 
+def configureChildDevice(data) {
+    try {
+        def deviceId = data.deviceId
+        def macAddress = data.macAddress
+        
+        if (debugLogging) log.debug "Configuring child device ${deviceId} with MAC ${macAddress}"
+        
+        def childDevice = getChildDevice(deviceId)
+        if (!childDevice) {
+            log.error "Child device not found: ${deviceId}"
+            return
+        }
+        
+        // No need to set individual settings - child device is managed by parent
+        if (debugLogging) log.debug "Child device configured as component - no individual settings needed"
+        
+        // Initialize the child device after settings are applied
+        childDevice.initialize()
+        
+        // Subscribe to MQTT topics for this MAC address
+        subscribeToMacAddress(macAddress)
+        
+        // Update child statistics after configuration
+        updateChildStatistics()
+        
+        if (debugLogging) log.debug "Completed configuration of child device ${childDevice.getDisplayName()}"
+        
+    } catch (Exception e) {
+        log.error "Exception while configuring child device: ${e.message}"
+    }
+}
+
 def componentPresenceHandler(childDevice, presenceValue) {
     // This method is called by child devices when their presence changes
-    if (debugLogging) log.debug "Child device ${childDevice.getDisplayName()} presence changed to: ${presenceValue}"
+    log.info "Child device ${childDevice.getDisplayName()} presence changed to: ${presenceValue}"
+    
+    // Update child statistics first
+    updateChildStatistics()
     
     // Re-evaluate composite presence when any child changes
     evaluateCompositePresence()
@@ -280,8 +306,16 @@ def updateChildStatistics() {
     def childCount = children.size()
     def presentCount = 0
     
+    if (debugLogging) log.debug "Updating child statistics for ${childCount} children:"
+    
     children.each { child ->
         def presenceValue = child.currentValue("presence")
+        def macAddress = child.getDataValue("macAddress") ?: child.getSetting("macAddress")
+        
+        if (debugLogging) {
+            log.debug "  Child ${child.getDisplayName()} (MAC: ${macAddress}): presence = '${presenceValue}'"
+        }
+        
         if (presenceValue == "present") {
             presentCount++
         }
@@ -303,13 +337,8 @@ def evaluateCompositePresence() {
         compositePresence = "not present"
         if (debugLogging) log.debug "No child devices - setting composite presence to 'not present'"
     } else {
-        def presentCount = 0
-        children.each { child ->
-            def presenceValue = child.currentValue("presence")
-            if (presenceValue == "present") {
-                presentCount++
-            }
-        }
+        // Get the current presentCount from device attribute
+        def presentCount = device.currentValue("presentCount") ?: 0
         
         if (aggregationMode == "anyone") {
             // OR logic - any child present means composite is present
@@ -383,6 +412,26 @@ def normalizeMacAddress(String macAddr) {
     return macAddr?.toLowerCase()?.replace(":", "-")
 }
 
+def isValidMacAddress(String macAddr) {
+    // Validate MAC address format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
+    if (!macAddr) return false
+    
+    // Remove whitespace and convert to uppercase for validation
+    String cleanMac = macAddr.trim().toUpperCase()
+    
+    // Check colon format: AA:BB:CC:DD:EE:FF
+    if (cleanMac.matches(/^[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}$/)) {
+        return true
+    }
+    
+    // Check dash format: AA-BB-CC-DD-EE-FF
+    if (cleanMac.matches(/^[0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2}$/)) {
+        return true
+    }
+    
+    return false
+}
+
 def connectMQTT() {
     try {
         if (!settings.defaultMqttBroker) {
@@ -419,7 +468,7 @@ def subscribeToChildTopics() {
     try {
         def children = getChildDevices()
         children.each { child ->
-            def macAddress = child.getSetting("macAddress")
+            def macAddress = child.getDataValue("macAddress") ?: child.getSetting("macAddress")
             if (macAddress) {
                 subscribeToMacAddress(macAddress)
             }
@@ -486,11 +535,21 @@ def mqttClientStatus(String status) {
 }
 
 def findChildByMacAddress(String macAddress) {
-    // Find child device by MAC address setting
+    // Find child device by MAC address data value
     def children = getChildDevices()
+    if (debugLogging) log.debug "Searching for MAC '${macAddress}' among ${children.size()} children"
+    
     return children.find { child ->
-        def childMac = child.getSetting("macAddress")
-        return childMac && normalizeMacAddress(childMac) == normalizeMacAddress(macAddress)
+        // Try getDataValue first (immediate), then getSetting (persistent)
+        def childMac = child.getDataValue("macAddress") ?: child.getSetting("macAddress")
+        def normalizedChildMac = normalizeMacAddress(childMac)
+        def normalizedSearchMac = normalizeMacAddress(macAddress)
+        
+        if (debugLogging) {
+            log.debug "Comparing child MAC '${childMac}' (normalized: '${normalizedChildMac}') with search MAC '${macAddress}' (normalized: '${normalizedSearchMac}')"
+        }
+        
+        return childMac && normalizedChildMac == normalizedSearchMac
     }
 }
 
@@ -499,6 +558,12 @@ def updateChildMacAddress(String deviceId, String newMacAddress) {
     
     if (!deviceId || !newMacAddress) {
         log.error "Device ID and new MAC address are required"
+        return false
+    }
+    
+    // Validate MAC address format
+    if (!isValidMacAddress(newMacAddress)) {
+        log.error "Invalid MAC address format: ${newMacAddress}. Expected format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF"
         return false
     }
     
@@ -518,13 +583,14 @@ def updateChildMacAddress(String deviceId, String newMacAddress) {
         }
         
         // Get old MAC address for MQTT unsubscribe
-        def oldMacAddress = childDevice.getSetting("macAddress")
+        def oldMacAddress = childDevice.getDataValue("macAddress") ?: childDevice.getSetting("macAddress")
         if (oldMacAddress) {
             unsubscribeFromMacAddress(oldMacAddress)
         }
         
-        // Update MAC address setting
+        // Update MAC address setting and data value
         childDevice.updateSetting("macAddress", newMacAddress)
+        childDevice.updateDataValue("macAddress", newMacAddress)
         
         // Subscribe to new MAC address topics
         subscribeToMacAddress(newMacAddress)
@@ -580,6 +646,8 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         
         // Find the corresponding child device by MAC address
         String macAddress = macFromTopic.replace("-", ":")  // Convert back to colon format
+        if (debugLogging) log.debug "Converted MAC from topic '${macFromTopic}' to '${macAddress}'"
+        
         def childDevice = findChildByMacAddress(macAddress)
         
         if (!childDevice) {
