@@ -288,17 +288,21 @@ def componentPresenceHandler(childDevice, presenceValue) {
     // This method is called by child devices when their presence changes
     log.info "Child device ${childDevice.getDisplayName()} presence changed to: ${presenceValue}"
     
-    // Update child statistics first
-    updateChildStatistics()
-    
-    // Re-evaluate composite presence when any child changes
-    evaluateCompositePresence()
+    // Use runIn to ensure child device state is fully updated before checking statistics
+    runIn(1, "updateChildStatisticsDelayed", [overwrite: false])
 }
 
 def componentRefresh(childDevice) {
     // Handle refresh requests from child devices
     if (debugLogging) log.debug "Child device ${childDevice.getDisplayName()} requested refresh"
     childDevice.refresh()
+}
+
+def updateChildStatisticsDelayed() {
+    // Delayed version of updateChildStatistics to handle timing issues
+    if (debugLogging) log.debug "Delayed child statistics update triggered"
+    updateChildStatistics()
+    evaluateCompositePresence()
 }
 
 def updateChildStatistics() {
@@ -312,12 +316,12 @@ def updateChildStatistics() {
         def presenceValue = child.currentValue("presence")
         def macAddress = child.getDataValue("macAddress") ?: child.getSetting("macAddress")
         
-        if (debugLogging) {
-            log.debug "  Child ${child.getDisplayName()} (MAC: ${macAddress}): presence = '${presenceValue}'"
-        }
+        // Always log child status for debugging Present Count issues
+        log.info "  Child ${child.getDisplayName()} (MAC: ${macAddress}): presence = '${presenceValue}'"
         
         if (presenceValue == "present") {
             presentCount++
+            log.info "    -> Adding to present count (now ${presentCount})"
         }
     }
     
