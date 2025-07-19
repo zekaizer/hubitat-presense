@@ -22,8 +22,8 @@ metadata {
         command "notPresent"
         command "arrive"
         command "depart"
-        command "addChildDevice"
-        command "removeChildDevice", [[name:"deviceId", type:"STRING", description:"Device ID to remove"]]
+        command "addChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"]]
+        command "removeChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address of device to remove"]]
         command "removeAllChildren"
     }
     
@@ -36,6 +36,13 @@ metadata {
         }
         section("Child Device Management") {
             input "autoAddChildren", "bool", title: "Auto-discover All-in-One Presence devices", defaultValue: false, required: false
+        }
+        section("Default MQTT Settings for Child Devices") {
+            input "defaultMqttBroker", "string", title: "Default MQTT Broker IP Address", required: false
+            input "defaultMqttPort", "string", title: "Default MQTT Broker Port", defaultValue: "1883", required: false
+            input "defaultMqttUsername", "string", title: "Default MQTT Username (optional)", required: false
+            input "defaultMqttPassword", "password", title: "Default MQTT Password (optional)", required: false
+            input "defaultHeartbeatTimeout", "number", title: "Default Heartbeat Timeout (seconds)", defaultValue: 60, range: "5..3600", required: false
         }
     }
 }
@@ -96,25 +103,64 @@ def refresh() {
     sendEvent(name: "lastActivity", value: new Date().toString())
 }
 
-def addChildDevice() {
-    if (debugLogging) log.debug "Adding child device"
+def addChildDevice(macAddress = null) {
+    if (debugLogging) log.debug "Adding child device with MAC address: ${macAddress}"
+    
+    if (!macAddress) {
+        log.error "MAC address is required to add child device"
+        return null
+    }
     
     try {
+        // Normalize MAC address and create DNI
+        String normalizedMac = normalizeMacAddress(macAddress)
+        def childDeviceNetworkId = "composite-presence-${normalizedMac}"
+        
+        // Check if child with this MAC already exists
+        def existingChild = getChildDevice(childDeviceNetworkId)
+        if (existingChild) {
+            log.warn "Child device with MAC address ${macAddress} already exists: ${existingChild.getDisplayName()}"
+            return existingChild
+        }
+        
         // Create a new All-in-One Presence child device
-        def childDeviceNetworkId = "composite-presence-child-${now()}"
         def childDevice = addChildDevice(
             "zekaizer", 
             "All-in-One Presence Driver", 
             childDeviceNetworkId,
             [
                 name: "All-in-One Presence Child",
-                label: "Presence Child ${getChildDevices().size() + 1}",
+                label: "Presence ${normalizedMac}",
                 isComponent: true
             ]
         )
         
         if (childDevice) {
-            if (debugLogging) log.debug "Successfully created child device: ${childDevice.getDisplayName()}"
+            if (debugLogging) log.debug "Successfully created child device: ${childDevice.getDisplayName()} with DNI: ${childDeviceNetworkId}"
+            
+            // Set the MAC address and default MQTT settings in the child device
+            childDevice.updateSetting("macAddress", macAddress)
+            
+            // Apply default MQTT settings if configured
+            if (settings.defaultMqttBroker) {
+                childDevice.updateSetting("mqttBroker", settings.defaultMqttBroker)
+            }
+            if (settings.defaultMqttPort) {
+                childDevice.updateSetting("mqttPort", settings.defaultMqttPort)
+            }
+            if (settings.defaultMqttUsername) {
+                childDevice.updateSetting("mqttUsername", settings.defaultMqttUsername)
+            }
+            if (settings.defaultMqttPassword) {
+                childDevice.updateSetting("mqttPassword", settings.defaultMqttPassword)
+            }
+            if (settings.defaultHeartbeatTimeout) {
+                childDevice.updateSetting("heartbeatTimeout", settings.defaultHeartbeatTimeout)
+            }
+            
+            // Initialize the child device
+            childDevice.initialize()
+            
             updateChildStatistics()
             return childDevice
         } else {
@@ -123,20 +169,31 @@ def addChildDevice() {
     } catch (Exception e) {
         log.error "Exception while adding child device: ${e.message}"
     }
+    
+    return null
 }
 
-def removeChildDevice(deviceId) {
-    if (debugLogging) log.debug "Removing child device: ${deviceId}"
+def removeChildDevice(macAddress) {
+    if (debugLogging) log.debug "Removing child device with MAC address: ${macAddress}"
+    
+    if (!macAddress) {
+        log.error "MAC address is required to remove child device"
+        return
+    }
     
     try {
-        def childDevice = getChildDevice(deviceId)
+        // Normalize MAC address and create DNI
+        String normalizedMac = normalizeMacAddress(macAddress)
+        def childDeviceNetworkId = "composite-presence-${normalizedMac}"
+        
+        def childDevice = getChildDevice(childDeviceNetworkId)
         if (childDevice) {
-            deleteChildDevice(deviceId)
-            if (debugLogging) log.debug "Successfully removed child device: ${deviceId}"
+            deleteChildDevice(childDeviceNetworkId)
+            if (debugLogging) log.debug "Successfully removed child device: ${childDevice.getDisplayName()}"
             updateChildStatistics()
             evaluateCompositePresence()
         } else {
-            log.warn "Child device not found: ${deviceId}"
+            log.warn "Child device not found for MAC address: ${macAddress}"
         }
     } catch (Exception e) {
         log.error "Exception while removing child device: ${e.message}"
@@ -281,4 +338,10 @@ def restoreState() {
     // Initialize child statistics
     sendEvent(name: "childCount", value: 0)
     sendEvent(name: "presentCount", value: 0)
+}
+
+def normalizeMacAddress(String macAddr) {
+    // Convert MAC address from AA:BB:CC:DD:EE:FF to aa-bb-cc-dd-ee-ff format
+    // Also handle case conversion to lowercase
+    return macAddr?.toLowerCase()?.replace(":", "-")
 }
