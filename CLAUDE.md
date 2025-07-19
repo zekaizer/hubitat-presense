@@ -56,3 +56,7 @@ This is a Hubitat Elevation presence detection driver that consolidates multiple
 
 - The driver's main goal is to quickly determine actual presence and prevent false negatives (mistakenly identifying presence as non-presence)
 - Rapid detection of presence is critical, while the detection of non-presence can be less immediate
+
+## Hubitat API Usage
+
+- When using Hubitat API, always check the official Hubitat documentation and use it correctly
