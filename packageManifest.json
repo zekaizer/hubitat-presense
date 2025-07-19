@@ -1,0 +1,33 @@
+{
+  "packageName": "All-in-One Presence Detection System",
+  "author": "Luke Lee",
+  "version": "0.0.1",
+  "minimumHEVersion": "2.3.0",
+  "dateReleased": "2025-01-18",
+  "description": "All-in-One Presence Detection System - combines WiFi MQTT detection, GPS geofencing, Anyone logic, manual override, and delayed away in a single driver",
+  "licenseFile": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/LICENSE",
+  "releaseNotes": "Version 0.0.1 - Initial release of the All-in-One Presence Detection System. This driver integrates WiFi MQTT detection, GPS geofencing, Anyone logic, manual override, and delayed away functionality into a single comprehensive solution.",
+  "documentationLink": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/README.md",
+  "communityLink": "https://community.hubitat.com/t/all-in-one-presence-detection-system/",
+  "apps": [],
+  "drivers": [
+    {
+      "id": "all-in-one-presence",
+      "name": "All-in-One Presence Driver",
+      "namespace": "zekaizer",
+      "location": "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/all-in-one-presence.groovy",
+      "required": true,
+      "primary": true
+    }
+  ],
+  "tags": [
+    "Presence",
+    "WiFi",
+    "GPS",
+    "MQTT",
+    "Geofencing",
+    "Automation",
+    "All-in-One"
+  ],
+  "category": "Convenience"
+}
