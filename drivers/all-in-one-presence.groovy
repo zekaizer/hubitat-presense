@@ -194,28 +194,6 @@ def restoreState() {
     }
 }
 
-def updatePresenceState(String presenceValue) {
-    // Check if presence state is actually changing
-    String currentPresence = device.currentValue("presence")
-    boolean isStateChanging = (currentPresence != presenceValue)
-    
-    // Update presence state and save to state
-    String currentTime = new Date().toString()
-    
-    sendEvent(name: "presence", value: presenceValue)
-    sendEvent(name: "lastActivity", value: currentTime)
-    
-    // Save to state for recovery
-    state.lastPresence = presenceValue
-    state.lastActivity = currentTime
-    
-    // Log presence state changes at info level
-    if (isStateChanging) {
-        log.info "Presence changed from '${currentPresence}' to '${presenceValue}'"
-    }
-    
-    if (debugLogging) log.debug "Presence updated to: ${presenceValue}, saved to state"
-}
 
 def scheduleHeartbeatTimeoutCheck() {
     // Get timeout from parent or use default (60 seconds, minimum 5 seconds)
@@ -355,7 +333,11 @@ def updateFinalPresenceState(String presenceValue) {
             if (debugLogging) log.debug "Failed to notify parent of presence change: ${e.message}"
         }
     }
-    
+    // Log presence state changes at info level
+    if (isStateChanging) {
+        log.info "Presence changed from '${currentPresence}' to '${presenceValue}'"
+    }
+
     if (debugLogging) log.debug "Final presence updated to: ${presenceValue}, saved to state"
 }
 
