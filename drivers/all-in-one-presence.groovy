@@ -48,9 +48,8 @@ def updated() {
 def initialize() {
     if (debugLogging) log.debug "All-in-One Presence Driver initialized"
     
-    // Set initial state
-    sendEvent(name: "presence", value: "not present")
-    sendEvent(name: "lastActivity", value: new Date().toString())
+    // Restore saved state or set initial state
+    restoreState()
     
     // Initialize MQTT connection
     connectMQTT()
@@ -90,7 +89,9 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         
         // Update lastHeartbeat attribute
         Date heartbeatDate = new Date(epochTime * 1000)
-        sendEvent(name: "lastHeartbeat", value: heartbeatDate.toString())
+        String heartbeatStr = heartbeatDate.toString()
+        sendEvent(name: "lastHeartbeat", value: heartbeatStr)
+        state.lastHeartbeat = heartbeatStr
         
         // Check if heartbeat is recent (within last 30 seconds)
         Long timeDiff = currentTime - epochTime
@@ -98,8 +99,7 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
             // Device is present
             if (device.currentValue("presence") != "present") {
                 if (debugLogging) log.debug "Setting presence to present (WiFi heartbeat)"
-                sendEvent(name: "presence", value: "present")
-                sendEvent(name: "lastActivity", value: new Date().toString())
+                updatePresenceState("present")
             }
         } else {
             if (debugLogging) log.debug "Heartbeat is too old (${timeDiff} seconds), ignoring"
@@ -112,14 +112,12 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
 
 def present() {
     if (debugLogging) log.debug "Setting presence to present"
-    sendEvent(name: "presence", value: "present")
-    sendEvent(name: "lastActivity", value: new Date().toString())
+    updatePresenceState("present")
 }
 
 def not_present() {
     if (debugLogging) log.debug "Setting presence to not present"
-    sendEvent(name: "presence", value: "not present")
-    sendEvent(name: "lastActivity", value: new Date().toString())
+    updatePresenceState("not present")
 }
 
 def arrive() {
@@ -207,4 +205,46 @@ def normalizeMacAddress(String macAddr) {
     // Convert MAC address from AA:BB:CC:DD:EE:FF to aa-bb-cc-dd-ee-ff format
     // Also handle case conversion to lowercase
     return macAddr?.toLowerCase()?.replace(":", "-")
+}
+
+def restoreState() {
+    // Restore saved presence state or set defaults
+    String savedPresence = state.lastPresence
+    String savedActivity = state.lastActivity
+    String savedHeartbeat = state.lastHeartbeat
+    
+    if (savedPresence) {
+        if (debugLogging) log.debug "Restoring saved presence state: ${savedPresence}"
+        sendEvent(name: "presence", value: savedPresence)
+    } else {
+        if (debugLogging) log.debug "No saved presence state, setting to 'not present'"
+        sendEvent(name: "presence", value: "not present")
+        state.lastPresence = "not present"
+    }
+    
+    if (savedActivity) {
+        sendEvent(name: "lastActivity", value: savedActivity)
+    } else {
+        String currentTime = new Date().toString()
+        sendEvent(name: "lastActivity", value: currentTime)
+        state.lastActivity = currentTime
+    }
+    
+    if (savedHeartbeat) {
+        sendEvent(name: "lastHeartbeat", value: savedHeartbeat)
+    }
+}
+
+def updatePresenceState(String presenceValue) {
+    // Update presence state and save to state
+    String currentTime = new Date().toString()
+    
+    sendEvent(name: "presence", value: presenceValue)
+    sendEvent(name: "lastActivity", value: currentTime)
+    
+    // Save to state for recovery
+    state.lastPresence = presenceValue
+    state.lastActivity = currentTime
+    
+    if (debugLogging) log.debug "Presence updated to: ${presenceValue}, saved to state"
 }
