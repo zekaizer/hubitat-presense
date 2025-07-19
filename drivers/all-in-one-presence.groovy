@@ -204,7 +204,7 @@ def mqttClientStatus(String status) {
 }
 
 def normalizeMacAddress(String macAddr) {
-    // Convert MAC address from AA:BB:CC:DD:EE:FF to AA-BB-CC-DD-EE-FF format
-    // Also handle case conversion to uppercase
-    return macAddr?.toUpperCase()?.replace(":", "-")
+    // Convert MAC address from AA:BB:CC:DD:EE:FF to aa-bb-cc-dd-ee-ff format
+    // Also handle case conversion to lowercase
+    return macAddr?.toLowerCase()?.replace(":", "-")
 }
