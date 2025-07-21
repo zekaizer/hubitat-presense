@@ -68,7 +68,7 @@ This is a Hubitat Elevation presence detection driver that consolidates multiple
 
 ## Hubitat API Usage
 
-- When using Hubitat API, always check the official Hubitat documentation and use it correctly
+- When using Hubitat API, always check the official [Hubitat documentation](https://docs2.hubitat.com/en/developer/driver/overview) and use it correctly
 
 ## MQTT Behavior Notes
 

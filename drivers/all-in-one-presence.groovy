@@ -18,8 +18,6 @@ metadata {
         
         command "present"
         command "notPresent"
-        command "arrive"
-        command "depart"
         command "gpsEnter"
         command "gpsExit"
     }
@@ -112,14 +110,6 @@ def notPresent() {
     updateGPSPresence("exited")
 }
 
-def arrive() {
-    present()
-}
-
-def depart() {
-    notPresent()
-}
-
 def refresh() {
     if (debugLogging) log.debug "Refreshing All-in-One Presence Driver"
     sendEvent(name: "lastActivity", value: new Date().toString())
@@ -132,13 +122,6 @@ def refresh() {
             if (debugLogging) log.debug "Failed to notify parent of refresh: ${e.message}"
         }
     }
-}
-
-
-def normalizeMacAddress(String macAddr) {
-    // Convert MAC address from AA:BB:CC:DD:EE:FF to aa-bb-cc-dd-ee-ff format
-    // Also handle case conversion to lowercase
-    return macAddr?.toLowerCase()?.replace(":", "-")
 }
 
 def restoreState() {

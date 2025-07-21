@@ -59,7 +59,19 @@ def initialize() {
     
     // Create or find Anyone Presence child device
     createAnyonePresenceDevice()
-    
+
+    def children = getChildDevices()
+        
+    children.each { child ->
+        // Only count "All-in-One Presence Child" devices, skip Anyone Presence
+        if (child.name != "All-in-One Presence Child")
+            return
+        
+        // Initialize child device settings
+        if (debugLogging) log.debug "Initializing child device: ${child.getDisplayName()}"
+        child.initialize()
+    }
+
     // Update child count (which will also update anyone presence)
     updateChildStatistics()
 }
