@@ -214,7 +214,7 @@ def checkHeartbeatTimeout() {
             log.debug "Checking heartbeat timeout: ${timeSinceLastHeartbeat}s since last heartbeat (timeout: ${timeoutSeconds}s)"
         }
         
-        if (timeSinceLastHeartbeat > timeoutSeconds) {
+        if (timeSinceLastHeartbeat >= timeoutSeconds) {
             // Heartbeat timeout - set WiFi presence to disconnected
             if (debugLogging) log.debug "WiFi heartbeat timeout detected"
             updateWiFiPresence("disconnected")
