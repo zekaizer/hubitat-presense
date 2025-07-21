@@ -325,21 +325,17 @@ def updateChildStatistics() {
     
     children.each { child ->
         // Only count "All-in-One Presence Child" devices, skip Anyone Presence
-        if (child.name != "All-in-One Presence Child") {
-            log.info "  Skipping non-individual device: ${child.getDisplayName()} (name: ${child.name})"
+        if (child.name != "All-in-One Presence Child")
             return
-        }
         
         childCount++
         def presenceValue = child.currentValue("presence")
         def macAddress = child.getDataValue("macAddress") ?: child.getSetting("macAddress")
         
-        // Always log child status for debugging Present Count issues
-        log.info "  Child ${child.getDisplayName()} (MAC: ${macAddress}): presence = '${presenceValue}'"
         
         if (presenceValue == "present") {
+            if (debugLogging) log.debug "  Child ${child.getDisplayName()} (MAC: ${macAddress}): presence = '${presenceValue}'"
             presentCount++
-            log.info "    -> Adding to present count (now ${presentCount})"
         }
     }
     
