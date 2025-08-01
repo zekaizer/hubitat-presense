@@ -59,6 +59,9 @@ def initialize() {
     
     // Create or find Anyone Presence child device
     createAnyonePresenceDevice()
+    
+    // Create or find Guest Presence child device
+    createGuestPresenceDevice()
 
     def children = getChildDevices()
         
@@ -263,6 +266,46 @@ def createAnyonePresenceDevice() {
     }
 }
 
+def createGuestPresenceDevice() {
+    // Check if Guest Presence device already exists
+    def guestDni = "composite-presence-${device.id}-guest"
+    def guestDevice = getChildDevice(guestDni)
+    
+    if (!guestDevice) {
+        try {
+            if (debugLogging) log.debug "Creating Guest Presence Switch using built-in Generic Component Switch"
+            
+            guestDevice = addChildDevice(
+                "hubitat",
+                "Generic Component Switch",
+                guestDni,
+                [
+                    name: "Guest Presence",
+                    label: "Guest Presence Switch",
+                    isComponent: true
+                ]
+            )
+            
+            if (guestDevice) {
+                if (debugLogging) log.debug "Successfully created Guest Presence Switch: ${guestDevice.getDisplayName()}"
+                
+                // Mark this as the special "guest" device
+                guestDevice.updateDataValue("deviceType", "guest")
+                
+                // Set initial state to off
+                guestDevice.sendEvent(name: "switch", value: "off")
+            } else {
+                log.error "Failed to create Guest Presence Switch"
+            }
+            
+        } catch (Exception e) {
+            log.error "Exception while creating Guest Presence Switch: ${e.message}"
+        }
+    } else {
+        if (debugLogging) log.debug "Guest Presence Switch already exists: ${guestDevice.getDisplayName()}"
+    }
+}
+
 def configureChildDevice(data) {
     try {
         def deviceId = data.deviceId
@@ -308,6 +351,26 @@ def componentRefresh(childDevice) {
     // IMPORTANT: Do nothing here to prevent infinite loop
     // Statistics will be updated through componentPresenceHandler when presence changes
     if (debugLogging) log.debug "Child device ${childDevice.getDisplayName()} refresh acknowledged"
+}
+
+def componentOn(childDevice) {
+    // Handle Guest Presence Switch turning on
+    def deviceType = childDevice.getDataValue("deviceType")
+    if (deviceType == "guest") {
+        log.info "Guest Presence Switch turned ON"
+        // Update statistics immediately when guest switch changes
+        updateChildStatistics()
+    }
+}
+
+def componentOff(childDevice) {
+    // Handle Guest Presence Switch turning off
+    def deviceType = childDevice.getDataValue("deviceType")
+    if (deviceType == "guest") {
+        log.info "Guest Presence Switch turned OFF"
+        // Update statistics immediately when guest switch changes
+        updateChildStatistics()
+    }
 }
 
 def updateChildStatisticsDelayed() {
