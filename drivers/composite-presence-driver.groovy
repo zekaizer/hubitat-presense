@@ -293,7 +293,7 @@ def createGuestPresenceDevice() {
                 guestDevice.updateDataValue("deviceType", "guest")
                 
                 // Set initial state to off
-                guestDevice.sendEvent(name: "switch", value: "off")
+                guestDevice.sendEvent(name: "switch", value: "off", descriptionText: "${guestDevice.displayName} is off")
             } else {
                 log.error "Failed to create Guest Presence Switch"
             }
@@ -358,6 +358,8 @@ def componentOn(childDevice) {
     def deviceType = childDevice.getDataValue("deviceType")
     if (deviceType == "guest") {
         log.info "Guest Presence Switch turned ON"
+        // Update the switch state
+        childDevice.sendEvent(name: "switch", value: "on", descriptionText: "${childDevice.displayName} is on")
         // Update statistics immediately when guest switch changes
         updateChildStatistics()
     }
@@ -368,6 +370,8 @@ def componentOff(childDevice) {
     def deviceType = childDevice.getDataValue("deviceType")
     if (deviceType == "guest") {
         log.info "Guest Presence Switch turned OFF"
+        // Update the switch state
+        childDevice.sendEvent(name: "switch", value: "off", descriptionText: "${childDevice.displayName} is off")
         // Update statistics immediately when guest switch changes
         updateChildStatistics()
     }
