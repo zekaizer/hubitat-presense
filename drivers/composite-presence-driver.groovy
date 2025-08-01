@@ -273,36 +273,36 @@ def createGuestPresenceDevice() {
     
     if (!guestDevice) {
         try {
-            if (debugLogging) log.debug "Creating Guest Presence Switch using built-in Generic Component Switch"
+            if (debugLogging) log.debug "Creating Guest Access Lock using built-in Generic Component Lock"
             
             guestDevice = addChildDevice(
                 "hubitat",
-                "Generic Component Switch",
+                "Generic Component Lock",
                 guestDni,
                 [
-                    name: "Guest Presence",
-                    label: "Guest Presence Switch",
+                    name: "Guest Access",
+                    label: "Guest Access Lock",
                     isComponent: true
                 ]
             )
             
             if (guestDevice) {
-                if (debugLogging) log.debug "Successfully created Guest Presence Switch: ${guestDevice.getDisplayName()}"
+                if (debugLogging) log.debug "Successfully created Guest Access Lock: ${guestDevice.getDisplayName()}"
                 
                 // Mark this as the special "guest" device
                 guestDevice.updateDataValue("deviceType", "guest")
                 
-                // Set initial state to off
-                guestDevice.sendEvent(name: "switch", value: "off", descriptionText: "${guestDevice.displayName} is off")
+                // Set initial state to locked (no guest access)
+                guestDevice.sendEvent(name: "lock", value: "locked", descriptionText: "${guestDevice.displayName} is locked")
             } else {
-                log.error "Failed to create Guest Presence Switch"
+                log.error "Failed to create Guest Access Lock"
             }
             
         } catch (Exception e) {
-            log.error "Exception while creating Guest Presence Switch: ${e.message}"
+            log.error "Exception while creating Guest Access Lock: ${e.message}"
         }
     } else {
-        if (debugLogging) log.debug "Guest Presence Switch already exists: ${guestDevice.getDisplayName()}"
+        if (debugLogging) log.debug "Guest Access Lock already exists: ${guestDevice.getDisplayName()}"
     }
 }
 
@@ -353,26 +353,26 @@ def componentRefresh(childDevice) {
     if (debugLogging) log.debug "Child device ${childDevice.getDisplayName()} refresh acknowledged"
 }
 
-def componentOn(childDevice) {
-    // Handle Guest Presence Switch turning on
+def componentUnlock(childDevice) {
+    // Handle Guest Access Lock unlocking (guest access enabled)
     def deviceType = childDevice.getDataValue("deviceType")
     if (deviceType == "guest") {
-        log.info "Guest Presence Switch turned ON"
-        // Update the switch state
-        childDevice.sendEvent(name: "switch", value: "on", descriptionText: "${childDevice.displayName} is on")
-        // Use runIn to ensure switch state is fully updated before checking statistics
+        log.info "Guest Access Lock UNLOCKED - Guest access enabled"
+        // Update the lock state
+        childDevice.sendEvent(name: "lock", value: "unlocked", descriptionText: "${childDevice.displayName} is unlocked")
+        // Use runIn to ensure lock state is fully updated before checking statistics
         runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
     }
 }
 
-def componentOff(childDevice) {
-    // Handle Guest Presence Switch turning off
+def componentLock(childDevice) {
+    // Handle Guest Access Lock locking (guest access disabled)
     def deviceType = childDevice.getDataValue("deviceType")
     if (deviceType == "guest") {
-        log.info "Guest Presence Switch turned OFF"
-        // Update the switch state
-        childDevice.sendEvent(name: "switch", value: "off", descriptionText: "${childDevice.displayName} is off")
-        // Use runIn to ensure switch state is fully updated before checking statistics
+        log.info "Guest Access Lock LOCKED - Guest access disabled"
+        // Update the lock state
+        childDevice.sendEvent(name: "lock", value: "locked", descriptionText: "${childDevice.displayName} is locked")
+        // Use runIn to ensure lock state is fully updated before checking statistics
         runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
     }
 }
@@ -394,15 +394,15 @@ def updateChildStatistics() {
     children.each { child ->
         def deviceType = child.getDataValue("deviceType")
         
-        // Check Guest Presence Switch
+        // Check Guest Access Lock
         if (deviceType == "guest") {
-            def switchValue = child.currentValue("switch")
-            if (switchValue == "on") {
+            def lockValue = child.currentValue("lock")
+            if (lockValue == "unlocked") {
                 guestPresent = true
-                if (debugLogging) log.debug "  Guest Presence Switch is ON"
+                if (debugLogging) log.debug "  Guest Access Lock is UNLOCKED - Guest present"
             } else {
                 guestPresent = false
-                if (debugLogging) log.debug "  Guest Presence Switch is OFF"
+                if (debugLogging) log.debug "  Guest Access Lock is LOCKED - No guest"
             }
             return
         }
