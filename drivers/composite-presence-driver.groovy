@@ -383,11 +383,29 @@ def updateChildStatistics() {
     def children = getChildDevices()
     def childCount = 0
     def presentCount = 0
+    def guestPresent = false
     
     if (debugLogging) log.debug "Updating child statistics for ${children.size()} children:"
     
     children.each { child ->
-        // Only count "All-in-One Presence Child" devices, skip Anyone Presence
+        def deviceType = child.getDataValue("deviceType")
+        
+        // Check Guest Presence Switch
+        if (deviceType == "guest") {
+            def switchValue = child.currentValue("switch")
+            if (switchValue == "on") {
+                guestPresent = true
+                if (debugLogging) log.debug "  Guest Presence Switch is ON"
+            }
+            return
+        }
+        
+        // Skip Anyone Motion device
+        if (deviceType == "anyone") {
+            return
+        }
+        
+        // Only count "All-in-One Presence Child" devices
         if (child.name != "All-in-One Presence Child")
             return
         
@@ -405,13 +423,13 @@ def updateChildStatistics() {
     sendEvent(name: "childCount", value: childCount)
     sendEvent(name: "presentCount", value: presentCount)
     
-    if (debugLogging) log.debug "Child statistics updated: ${presentCount}/${childCount} present"
+    if (debugLogging) log.debug "Child statistics updated: ${presentCount}/${childCount} present, Guest: ${guestPresent}"
     
-    // Update anyone presence immediately with the calculated presentCount
-    updateAnyonePresence(presentCount)
+    // Update anyone presence with guest override
+    updateAnyonePresence(presentCount, guestPresent)
 }
 
-def updateAnyonePresence(presentCount) {
+def updateAnyonePresence(presentCount, guestPresent = false) {
     def anyoneDni = "composite-presence-${device.id}-anyone"
     def anyoneDevice = getChildDevice(anyoneDni)
     if (!anyoneDevice) {
@@ -422,9 +440,10 @@ def updateAnyonePresence(presentCount) {
         }
     }
     
-    def anyoneMotion = (presentCount > 0) ? "active" : "inactive"
+    // If guest is present, always set motion to active
+    def anyoneMotion = (presentCount > 0 || guestPresent) ? "active" : "inactive"
 
-    log.info "Updating Anyone Motion to: ${anyoneMotion} (presentCount: ${presentCount})"
+    log.info "Updating Anyone Motion to: ${anyoneMotion} (presentCount: ${presentCount}, guestPresent: ${guestPresent})"
     def currentAnyoneMotion = anyoneDevice.currentValue("motion")
     if (currentAnyoneMotion != anyoneMotion) {
         anyoneDevice.parse([[name: "motion", value: anyoneMotion, descriptionText: "${anyoneDevice.displayName} is ${anyoneMotion}"]])
