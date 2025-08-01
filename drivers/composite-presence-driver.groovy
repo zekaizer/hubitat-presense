@@ -400,6 +400,9 @@ def updateChildStatistics() {
             if (switchValue == "on") {
                 guestPresent = true
                 if (debugLogging) log.debug "  Guest Presence Switch is ON"
+            } else {
+                guestPresent = false
+                if (debugLogging) log.debug "  Guest Presence Switch is OFF"
             }
             return
         }
