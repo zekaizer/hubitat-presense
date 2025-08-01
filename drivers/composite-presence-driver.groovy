@@ -360,8 +360,8 @@ def componentOn(childDevice) {
         log.info "Guest Presence Switch turned ON"
         // Update the switch state
         childDevice.sendEvent(name: "switch", value: "on", descriptionText: "${childDevice.displayName} is on")
-        // Update statistics immediately when guest switch changes
-        updateChildStatistics()
+        // Use runIn to ensure switch state is fully updated before checking statistics
+        runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
     }
 }
 
@@ -372,8 +372,8 @@ def componentOff(childDevice) {
         log.info "Guest Presence Switch turned OFF"
         // Update the switch state
         childDevice.sendEvent(name: "switch", value: "off", descriptionText: "${childDevice.displayName} is off")
-        // Update statistics immediately when guest switch changes
-        updateChildStatistics()
+        // Use runIn to ensure switch state is fully updated before checking statistics
+        runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
     }
 }
 
