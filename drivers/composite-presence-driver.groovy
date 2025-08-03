@@ -376,65 +376,8 @@ def componentPresenceHandler(childDevice, presenceValue) {
     // This method is called by child devices when their presence changes
     log.info "Child device ${childDevice.getDisplayName()} presence changed to: ${presenceValue}"
     
-    // Skip if Security System is not enabled
-    if (!settings.securitySystemEnabled) {
-        runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
-        return
-    }
-    
-    // Get current presence count before update
-    def previousPresentCount = device.currentValue("presentCount") ?: 0
-    
-    // Update statistics immediately to get new count
-    updateChildStatistics()
-    
-    def currentPresentCount = device.currentValue("presentCount") ?: 0
-    def currentMode = state.securitySystemMode ?: "home"
-    
-    // Determine if we need to update Security System mode
-    def shouldUpdateMode = false
-    def newMode = currentMode
-    
-    // Someone arrived (0 → 1+)
-    if (previousPresentCount == 0 && currentPresentCount > 0) {
-        if (currentMode == "away") {
-            newMode = "home"
-            shouldUpdateMode = true
-            log.info "Someone arrived, changing from away to home"
-        }
-    }
-    // Everyone left (1+ → 0)
-    else if (previousPresentCount > 0 && currentPresentCount == 0) {
-        // Check if user already initiated away mode (target_mode hint)
-        // Use stored target mode if available, otherwise fetch current status
-        def targetMode = state.securitySystemTargetMode
-        
-        if (!targetMode) {
-            def status = getSecuritySystemStatus()
-            if (status) {
-                targetMode = status.target_mode
-            }
-        }
-        
-        if (targetMode == "away" && currentMode != "away") {
-            // User already set target to away - confirm it immediately
-            log.info "Target mode is away, confirming immediate transition (skipping delay)"
-            updateSecuritySystemMode("away")
-            return  // Skip the normal flow since we're handling it directly
-        }
-        
-        // Normal auto-away logic
-        if (currentMode != "off" && currentMode != "away") {
-            newMode = "away"
-            shouldUpdateMode = true
-            log.info "Everyone left, changing from ${currentMode} to away"
-        }
-    }
-    
-    // Update Security System mode if needed
-    if (shouldUpdateMode) {
-        updateSecuritySystemMode(newMode)
-    }
+    // Just trigger delayed update - all logic will be handled there
+    runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
 }
 
 def componentRefresh(childDevice) {
@@ -481,9 +424,48 @@ def updateChildStatisticsDelayed() {
     }
     
     updateChildStatistics()
+    
+    // Handle Security System mode updates based on transitions
+    if (settings.securitySystemEnabled && state.presenceTransition && state.presenceTransition != "no_change") {
+        handlePresenceTransition()
+    }
+}
+
+def handlePresenceTransition() {
+    def transition = state.presenceTransition
+    def currentMode = state.securitySystemMode ?: "home"
+    
+    if (transition == "someone_arrived") {
+        // Someone arrived (0 → 1+)
+        if (currentMode == "away") {
+            log.info "Someone arrived, changing from away to home"
+            updateSecuritySystemMode("home")
+        }
+    } else if (transition == "everyone_left") {
+        // Everyone left (1+ → 0)
+        
+        // Check if user already initiated away mode (target_mode hint)
+        def targetMode = state.securitySystemTargetMode
+        
+        if (targetMode == "away" && currentMode != "away") {
+            // User already set target to away - confirm it immediately
+            log.info "Target mode is away, confirming immediate transition (skipping delay)"
+            updateSecuritySystemMode("away")
+        } else if (currentMode != "off" && currentMode != "away") {
+            // Normal auto-away logic
+            log.info "Everyone left, changing from ${currentMode} to away"
+            updateSecuritySystemMode("away")
+        }
+    }
+    
+    // Clear the transition flag
+    state.presenceTransition = "no_change"
 }
 
 def updateChildStatistics() {
+    // Store previous count for transition detection
+    def previousPresentCount = device.currentValue("presentCount") ?: 0
+    
     def children = getChildDevices()
     def childCount = 0
     def presentCount = 0
@@ -539,11 +521,21 @@ def updateChildStatistics() {
     
     if (debugLogging) log.debug "Child statistics updated: ${presentCount}/${childCount} present, Guest: ${guestPresent}"
     
+    // Detect presence transitions
+    if (previousPresentCount == 0 && presentCount > 0) {
+        state.presenceTransition = "someone_arrived"
+        log.info "Presence transition detected: someone arrived"
+    } else if (previousPresentCount > 0 && presentCount == 0) {
+        state.presenceTransition = "everyone_left"
+        log.info "Presence transition detected: everyone left"
+    } else {
+        state.presenceTransition = "no_change"
+    }
+    
     // Update anyone presence with guest override (legacy mode only)
     if (!settings.securitySystemEnabled) {
         updateAnyonePresence(presentCount, guestPresent)
     }
-    // Note: Security System mode updates are now handled in componentPresenceHandler()
 }
 
 def updateAnyonePresence(presentCount, guestPresent = false) {
