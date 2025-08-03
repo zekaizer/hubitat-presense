@@ -793,3 +793,27 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         log.error "Failed to handle WiFi presence heartbeat: ${e.message}"
     }
 }
+
+def setSecuritySystemMode(String mode) {
+    if (!settings.securitySystemEnabled) {
+        log.warn "Security System integration is not enabled"
+        return
+    }
+    
+    log.info "Security System mode changed to: ${mode}"
+    
+    // Store the mode in state
+    state.securitySystemMode = mode
+    
+    // Update the Security System device
+    def securityDni = "composite-presence-${device.id}-security"
+    def securityDevice = getChildDevice(securityDni)
+    
+    if (securityDevice) {
+        securityDevice.sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "${securityDevice.displayName} is in ${mode} mode")
+    }
+    
+    // If mode is off, it acts like guest access is enabled
+    // Trigger presence update with delay to ensure state is saved
+    runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
+}
