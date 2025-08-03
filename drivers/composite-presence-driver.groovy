@@ -64,6 +64,9 @@ def initialize() {
     // Initialize MQTT connection
     connectMQTT()
     
+    // Always create Anyone Motion device
+    createAnyonePresenceDevice()
+    
     // Create appropriate control devices based on settings
     if (settings.securitySystemEnabled) {
         // Initialize Security System mode
@@ -77,8 +80,7 @@ def initialize() {
             sendEvent(name: "securitySystemTargetMode", value: state.securitySystemTargetMode ?: state.securitySystemMode)
         }
     } else {
-        // Create or find legacy devices
-        createAnyonePresenceDevice()
+        // Create Guest Access Lock for legacy mode
         createGuestPresenceDevice()
     }
 
@@ -246,13 +248,7 @@ def removeAllChildren() {
 
 
 def createAnyonePresenceDevice() {
-    // Legacy method - kept for backward compatibility
-    // Only create if Security System is not enabled
-    if (settings.securitySystemEnabled) {
-        if (debugLogging) log.debug "Security System enabled, skipping Anyone Motion device creation"
-        return
-    }
-    
+    // Always create Anyone Motion device regardless of Security System setting
     // Check if Anyone Presence device already exists
     def anyoneDni = "composite-presence-${device.id}-anyone"
     def anyoneDevice = getChildDevice(anyoneDni)
@@ -532,19 +528,12 @@ def updateChildStatistics() {
         state.presenceTransition = "no_change"
     }
     
-    // Update anyone presence with guest override (legacy mode only)
-    if (!settings.securitySystemEnabled) {
-        updateAnyonePresence(presentCount, guestPresent)
-    }
+    // Always update anyone presence with guest override
+    updateAnyonePresence(presentCount, guestPresent)
 }
 
 def updateAnyonePresence(presentCount, guestPresent = false) {
-    // Legacy method - only used when Security System is not enabled
-    if (settings.securitySystemEnabled) {
-        if (debugLogging) log.debug "Security System enabled, skipping Anyone Motion update"
-        return
-    }
-    
+    // Always update Anyone Motion device
     def anyoneDni = "composite-presence-${device.id}-anyone"
     def anyoneDevice = getChildDevice(anyoneDni)
     if (!anyoneDevice) {
