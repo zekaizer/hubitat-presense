@@ -22,7 +22,7 @@ metadata {
         command "removeAllChildren"
         command "updateChildMacAddress", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newMacAddress", type:"STRING", description:"New MAC Address"]]
         command "updateChildLabel", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newLabel", type:"STRING", description:"New Device Label"]]
-        command "setSecuritySystemMode", [[name:"mode", type:"ENUM", constraints: ["off", "home", "away", "night"], description:"Security system mode from webhook"]]
+        command "eventSecuritySystem", [[name:"event", type:"STRING", description:"Security system event from webhook (optional)"]]
     }
     
     preferences {
@@ -828,23 +828,75 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
     }
 }
 
-def setSecuritySystemMode(String mode) {
+def eventSecuritySystem(String event = null) {
     if (!settings.securitySystemEnabled) {
         log.warn "Security System integration is not enabled"
         return
     }
     
-    log.info "Security System mode changed to: ${mode}"
+    if (debugLogging) log.debug "Security System event received: ${event}"
+    
+    // Get current status from Security System
+    def status = getSecuritySystemStatus()
+    if (!status) {
+        log.error "Failed to get Security System status"
+        return
+    }
+    
+    if (status.arming) {
+        // System is in transition - ignore
+        if (debugLogging) log.debug "Security System is arming (transitioning), ignoring event"
+        return
+    }
+    
+    // Use current_mode from status
+    def currentMode = status.current_mode
+    log.info "Security System mode confirmed as: ${currentMode}"
     
     // Store the mode in state
-    state.securitySystemMode = mode
+    state.securitySystemMode = currentMode
     
     // Update the Security System status attribute
-    sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "Security System is in ${mode} mode")
+    sendEvent(name: "securitySystemStatus", value: currentMode, descriptionText: "Security System is in ${currentMode} mode")
     
     // If mode is off, it acts like guest access is enabled
     // Trigger presence update with delay to ensure state is saved
     runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
+}
+
+def getSecuritySystemStatus() {
+    if (!settings.securitySystemUrl || !settings.securitySystemPort) {
+        log.error "Security System URL or port not configured"
+        return null
+    }
+    
+    try {
+        def result = null
+        String url = "${settings.securitySystemUrl}:${settings.securitySystemPort}/status"
+        
+        if (debugLogging) log.debug "Getting Security System status from: ${url}"
+        
+        def params = [
+            uri: url,
+            timeout: 10,
+            ignoreSSLIssues: true
+        ]
+        
+        httpGet(params) { response ->
+            if (response.status == 200) {
+                result = response.data
+                if (debugLogging) log.debug "Security System status: ${result}"
+            } else {
+                log.error "Failed to get Security System status: ${response.status}"
+            }
+        }
+        
+        return result
+        
+    } catch (Exception e) {
+        log.error "Exception while getting Security System status: ${e.message}"
+        return null
+    }
 }
 
 def updateSecuritySystemMode(String mode) {
@@ -878,12 +930,19 @@ def updateSecuritySystemMode(String mode) {
         
         httpGet(params) { response ->
             if (response.status == 200) {
-                log.info "Successfully updated Security System to ${mode} mode"
-                // Update local state to match
-                state.securitySystemMode = mode
+                log.info "Successfully sent Security System mode update: ${mode}"
                 
-                // Update the Security System status attribute
-                sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "Security System is in ${mode} mode")
+                // Get actual status to confirm the change
+                def status = getSecuritySystemStatus()
+                if (status && !status.arming) {
+                    // Update local state with confirmed mode
+                    state.securitySystemMode = status.current_mode
+                    sendEvent(name: "securitySystemStatus", value: status.current_mode, descriptionText: "Security System is in ${status.current_mode} mode")
+                    
+                    if (status.current_mode != mode && debugLogging) {
+                        log.debug "Note: Requested ${mode} but system is in ${status.current_mode} mode"
+                    }
+                }
             } else {
                 log.error "Failed to update Security System mode: ${response.status}"
             }

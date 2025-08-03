@@ -81,8 +81,8 @@ The driver supports integration with homebridge-securitysystem to provide a unif
 1. Enable Security System Integration in driver preferences
 2. Set the homebridge-securitysystem server URL and port
 3. Configure homebridge-securitysystem webhook to call Hubitat MakerAPI endpoint:
-   - Command: `setSecuritySystemMode`
-   - Parameter: mode (off, home, away, night)
+   - Command: `eventSecuritySystem`
+   - Parameter: event (optional)
 
 ### Mode Mapping
 - **Off**: Guest access enabled (overrides presence detection)
@@ -92,12 +92,15 @@ The driver supports integration with homebridge-securitysystem to provide a unif
 
 ### Implementation Details
 - When Security System integration is enabled, it replaces the legacy Anyone Motion and Guest Access Lock devices
+- The driver uses `/status` API to get actual Security System state (current_mode, target_mode, arming, tripped)
+- Mode updates are event-based - only when presence count changes
 - The driver automatically updates Security System mode based on presence:
   - Any resident present → Home mode
   - No residents present → Away mode
   - User can manually set Off mode for guest access
 - Only Off mode is preserved when manually set by the user
 - Off mode acts as a presence override - the system behaves as if someone is always present
+- When Security System is in away mode, WiFi disconnect alone triggers "not present" (hint system)
 
 ## MQTT Behavior Notes
 
