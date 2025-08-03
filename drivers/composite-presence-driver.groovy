@@ -372,8 +372,46 @@ def componentPresenceHandler(childDevice, presenceValue) {
     // This method is called by child devices when their presence changes
     log.info "Child device ${childDevice.getDisplayName()} presence changed to: ${presenceValue}"
     
-    // Use runIn to ensure child device state is fully updated before checking statistics
-    runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
+    // Skip if Security System is not enabled
+    if (!settings.securitySystemEnabled) {
+        runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
+        return
+    }
+    
+    // Get current presence count before update
+    def previousPresentCount = device.currentValue("presentCount") ?: 0
+    
+    // Update statistics immediately to get new count
+    updateChildStatistics()
+    
+    def currentPresentCount = device.currentValue("presentCount") ?: 0
+    def currentMode = state.securitySystemMode ?: "home"
+    
+    // Determine if we need to update Security System mode
+    def shouldUpdateMode = false
+    def newMode = currentMode
+    
+    // Someone arrived (0 → 1+)
+    if (previousPresentCount == 0 && currentPresentCount > 0) {
+        if (currentMode == "away") {
+            newMode = "home"
+            shouldUpdateMode = true
+            log.info "Someone arrived, changing from away to home"
+        }
+    }
+    // Everyone left (1+ → 0)
+    else if (previousPresentCount > 0 && currentPresentCount == 0) {
+        if (currentMode != "off" && currentMode != "away") {
+            newMode = "away"
+            shouldUpdateMode = true
+            log.info "Everyone left, changing from ${currentMode} to away"
+        }
+    }
+    
+    // Update Security System mode if needed
+    if (shouldUpdateMode) {
+        updateSecuritySystemMode(newMode)
+    }
 }
 
 def componentRefresh(childDevice) {
@@ -471,18 +509,11 @@ def updateChildStatistics() {
     
     if (debugLogging) log.debug "Child statistics updated: ${presentCount}/${childCount} present, Guest: ${guestPresent}"
     
-    // Update anyone presence with guest override
-    if (settings.securitySystemEnabled) {
-        // Update Security System mode based on presence
-        if (presentCount > 0) {
-            updateSecuritySystemMode("home")
-        } else {
-            updateSecuritySystemMode("away")
-        }
-    } else {
-        // Legacy mode: update Anyone Motion
+    // Update anyone presence with guest override (legacy mode only)
+    if (!settings.securitySystemEnabled) {
         updateAnyonePresence(presentCount, guestPresent)
     }
+    // Note: Security System mode updates are now handled in componentPresenceHandler()
 }
 
 def updateAnyonePresence(presentCount, guestPresent = false) {
