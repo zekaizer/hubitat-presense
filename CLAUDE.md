@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Hubitat Elevation presence detection driver that consolidates multiple presence detection methods (WiFi MQTT, GPS geofencing, manual controls) into a single unified driver. The project consists of a single Groovy driver file and supporting package manifest for Hubitat Package Manager distribution.
 
+The driver now includes integration with homebridge-securitysystem for advanced presence and guest management through HomeKit Security System interface.
+
 ## Architecture
 
 - **Single Driver Architecture**: The entire functionality is contained within `drivers/all-in-one-presence.groovy`
@@ -69,6 +71,32 @@ This is a Hubitat Elevation presence detection driver that consolidates multiple
 ## Hubitat API Usage
 
 - When using Hubitat API, always check the official [Hubitat documentation](https://docs2.hubitat.com/en/developer/driver/overview) and use it correctly
+
+## Security System Integration
+
+### Overview
+The driver supports integration with homebridge-securitysystem to provide a unified presence and guest management interface through HomeKit's Security System.
+
+### Configuration
+1. Enable Security System Integration in driver preferences
+2. Set the homebridge-securitysystem server URL and port
+3. Configure homebridge-securitysystem webhook to call Hubitat MakerAPI endpoint:
+   - Command: `setSecuritySystemMode`
+   - Parameter: mode (off, home, away, night)
+
+### Mode Mapping
+- **Off**: Guest access enabled (overrides presence detection)
+- **Home**: Residents present, no guests
+- **Away**: No one present
+- **Night**: Not currently used
+
+### Implementation Details
+- When Security System integration is enabled, it replaces the legacy Anyone Motion and Guest Access Lock devices
+- The driver automatically updates Security System mode based on presence:
+  - Any resident present → Home mode
+  - No residents present → Away mode
+  - User can manually set Off mode for guest access
+- Off mode acts as a presence override - the system behaves as if someone is always present
 
 ## MQTT Behavior Notes
 
