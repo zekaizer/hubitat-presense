@@ -823,9 +823,13 @@ def notifyChildrenToReevaluate() {
     
     def children = getChildDevices()
     children.each { child ->
-        if (child.name == "All-in-One Presence Child" && child.hasCommand("evaluateFinalPresence")) {
+        if (child.name == "All-in-One Presence Child") {
             if (debugLogging) log.debug "Notifying ${child.getDisplayName()} to re-evaluate presence"
-            child.evaluateFinalPresence()
+            try {
+                child.evaluateFinalPresence()
+            } catch (Exception e) {
+                if (debugLogging) log.debug "Failed to notify ${child.getDisplayName()}: ${e.message}"
+            }
         }
     }
 }
