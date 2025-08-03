@@ -16,6 +16,7 @@ metadata {
         attribute "childCount", "number"
         attribute "presentCount", "number"
         attribute "securitySystemStatus", "enum", ["off", "home", "away", "night"]
+        attribute "securitySystemTargetMode", "enum", ["off", "home", "away", "night"]
         
         command "createChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"], [name:"deviceLabel", type:"STRING", description:"Device Label (optional)"]]
         command "removeChildDevice", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) or MAC Address of device to remove"]]
@@ -68,9 +69,12 @@ def initialize() {
         // Initialize Security System mode
         if (!state.securitySystemMode) {
             state.securitySystemMode = "home"
+            state.securitySystemTargetMode = "home"
             sendEvent(name: "securitySystemStatus", value: "home")
+            sendEvent(name: "securitySystemTargetMode", value: "home")
         } else {
             sendEvent(name: "securitySystemStatus", value: state.securitySystemMode)
+            sendEvent(name: "securitySystemTargetMode", value: state.securitySystemTargetMode ?: state.securitySystemMode)
         }
     } else {
         // Create or find legacy devices
@@ -877,12 +881,26 @@ def eventSecuritySystem(String event = null) {
     state.securitySystemMode = currentMode
     state.securitySystemTargetMode = targetMode
     
-    // Update the Security System status attribute
+    // Update the Security System status attributes
     sendEvent(name: "securitySystemStatus", value: currentMode, descriptionText: "Security System is in ${currentMode} mode")
+    sendEvent(name: "securitySystemTargetMode", value: targetMode, descriptionText: "Security System target mode is ${targetMode}")
     
     // Log if there's a pending transition
     if (targetMode != currentMode && debugLogging) {
         log.debug "Security System has pending transition to ${targetMode}"
+    }
+    
+    // If target mode is away, notify child devices to re-evaluate
+    if (targetMode == "away" && currentMode != "away") {
+        log.info "Target mode set to away - notifying child devices to re-evaluate presence"
+        // Notify all child devices to re-evaluate their presence status
+        def children = getChildDevices()
+        children.each { child ->
+            if (child.name == "All-in-One Presence Child" && child.hasCommand("evaluateFinalPresence")) {
+                if (debugLogging) log.debug "Notifying ${child.getDisplayName()} to re-evaluate presence"
+                child.evaluateFinalPresence()
+            }
+        }
     }
     
     // If mode is off, it acts like guest access is enabled

@@ -287,19 +287,11 @@ def evaluateFinalPresence() {
         // WiFi disconnected
         
         // Check if parent's Security System is in away mode or targeting away (hint from user)
-        def parentSecurityMode = null
-        def parentTargetMode = null
-        if (parent && parent.hasAttribute("securitySystemStatus")) {
-            parentSecurityMode = parent.currentValue("securitySystemStatus")
-            // Check if parent stores target mode in state
-            if (parent.hasCommand("getSecuritySystemStatus")) {
-                def parentState = parent.currentState("securitySystemTargetMode")
-                if (parentState) {
-                    parentTargetMode = parentState.value
-                }
-            }
-            if (debugLogging) log.debug "Parent Security System - current: ${parentSecurityMode}, target: ${parentTargetMode}"
-        }
+        def parentSecurityMode = parent.currentValue("securitySystemStatus")
+        // Get target mode from parent
+        def parentTargetMode = parent.currentValue("securitySystemTargetMode")
+
+        if (debugLogging) log.debug "Parent Security System - current: ${parentSecurityMode}, target: ${parentTargetMode}"
         
         if (parentSecurityMode == "away" || parentTargetMode == "away") {
             // User explicitly set away mode or targeting away - WiFi disconnect alone is enough
