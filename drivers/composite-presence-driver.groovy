@@ -446,7 +446,16 @@ def updateChildStatistics() {
     children.each { child ->
         def deviceType = child.getDataValue("deviceType")
         
-        // Check Guest Access Lock
+        // Check Security System mode
+        if (deviceType == "security") {
+            if (settings.securitySystemEnabled && state.securitySystemMode == "off") {
+                guestPresent = true
+                if (debugLogging) log.debug "  Security System is in OFF mode - Guest access enabled"
+            }
+            return
+        }
+        
+        // Check Guest Access Lock (legacy mode)
         if (deviceType == "guest") {
             def lockValue = child.currentValue("lock")
             if (lockValue == "unlocked") {
@@ -485,7 +494,17 @@ def updateChildStatistics() {
     if (debugLogging) log.debug "Child statistics updated: ${presentCount}/${childCount} present, Guest: ${guestPresent}"
     
     // Update anyone presence with guest override
-    updateAnyonePresence(presentCount, guestPresent)
+    if (settings.securitySystemEnabled) {
+        // Update Security System mode based on presence
+        if (presentCount > 0) {
+            updateSecuritySystemMode("home")
+        } else {
+            updateSecuritySystemMode("away")
+        }
+    } else {
+        // Legacy mode: update Anyone Motion
+        updateAnyonePresence(presentCount, guestPresent)
+    }
 }
 
 def updateAnyonePresence(presentCount, guestPresent = false) {
