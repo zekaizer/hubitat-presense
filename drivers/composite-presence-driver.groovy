@@ -473,6 +473,13 @@ def componentLock(childDevice) {
 def updateChildStatisticsDelayed() {
     // Delayed version of updateChildStatistics to handle timing issues
     if (debugLogging) log.debug "Delayed child statistics update triggered"
+    
+    // Check if we need to notify children about target away
+    if (state.shouldNotifyChildrenTargetAway) {
+        state.shouldNotifyChildrenTargetAway = false
+        notifyChildrenToReevaluate()
+    }
+    
     updateChildStatistics()
 }
 
@@ -811,6 +818,18 @@ def updateChildLabel(String deviceId, String newLabel) {
     }
 }
 
+def notifyChildrenToReevaluate() {
+    if (debugLogging) log.debug "Notifying child devices to re-evaluate presence due to target mode change"
+    
+    def children = getChildDevices()
+    children.each { child ->
+        if (child.name == "All-in-One Presence Child" && child.hasCommand("evaluateFinalPresence")) {
+            if (debugLogging) log.debug "Notifying ${child.getDisplayName()} to re-evaluate presence"
+            child.evaluateFinalPresence()
+        }
+    }
+}
+
 def handleWiFiPresenceHeartbeat(String topic, String payload) {
     try {
         // Extract MAC address from topic
@@ -890,17 +909,10 @@ def eventSecuritySystem(String event = null) {
         log.debug "Security System has pending transition to ${targetMode}"
     }
     
-    // If target mode is away, notify child devices to re-evaluate
+    // Store flag if we need to notify children about target away
     if (targetMode == "away" && currentMode != "away") {
-        log.info "Target mode set to away - notifying child devices to re-evaluate presence"
-        // Notify all child devices to re-evaluate their presence status
-        def children = getChildDevices()
-        children.each { child ->
-            if (child.name == "All-in-One Presence Child" && child.hasCommand("evaluateFinalPresence")) {
-                if (debugLogging) log.debug "Notifying ${child.getDisplayName()} to re-evaluate presence"
-                child.evaluateFinalPresence()
-            }
-        }
+        log.info "Target mode set to away - will notify child devices"
+        state.shouldNotifyChildrenTargetAway = true
     }
     
     // If mode is off, it acts like guest access is enabled
