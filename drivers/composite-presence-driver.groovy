@@ -817,3 +817,49 @@ def setSecuritySystemMode(String mode) {
     // Trigger presence update with delay to ensure state is saved
     runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
 }
+
+def updateSecuritySystemMode(String mode) {
+    if (!settings.securitySystemEnabled || !settings.securitySystemUrl || !settings.securitySystemPort) {
+        if (debugLogging) log.debug "Security System integration not properly configured"
+        return
+    }
+    
+    // Don't update if mode is already off (user manually set)
+    if (state.securitySystemMode == "off") {
+        if (debugLogging) log.debug "Security System is in off mode (guest access), skipping automatic update"
+        return
+    }
+    
+    try {
+        String url = "${settings.securitySystemUrl}:${settings.securitySystemPort}/${mode}"
+        
+        if (debugLogging) log.debug "Sending Security System mode update: ${mode} to ${url}"
+        
+        def params = [
+            uri: url,
+            timeout: 10,
+            ignoreSSLIssues: true
+        ]
+        
+        httpGet(params) { response ->
+            if (response.status == 200) {
+                log.info "Successfully updated Security System to ${mode} mode"
+                // Update local state to match
+                state.securitySystemMode = mode
+                
+                // Update the Security System device
+                def securityDni = "composite-presence-${device.id}-security"
+                def securityDevice = getChildDevice(securityDni)
+                
+                if (securityDevice) {
+                    securityDevice.sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "${securityDevice.displayName} is in ${mode} mode")
+                }
+            } else {
+                log.error "Failed to update Security System mode: ${response.status}"
+            }
+        }
+        
+    } catch (Exception e) {
+        log.error "Exception while updating Security System mode: ${e.message}"
+    }
+}
