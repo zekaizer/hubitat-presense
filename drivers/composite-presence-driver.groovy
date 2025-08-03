@@ -822,10 +822,16 @@ def updateSecuritySystemMode(String mode) {
         return
     }
     
-    // Don't update if mode is already off (user manually set)
+    // Don't update if mode is off (guest access)
     if (state.securitySystemMode == "off") {
         if (debugLogging) log.debug "Security System is in off mode (guest access), skipping automatic update"
         return
+    }
+    
+    // If in night mode and trying to set home, keep it as night
+    if (state.securitySystemMode == "night" && mode == "home") {
+        if (debugLogging) log.debug "Security System is in night mode, keeping night instead of home"
+        mode = "night"
     }
     
     try {

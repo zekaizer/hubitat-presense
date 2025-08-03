@@ -88,7 +88,7 @@ The driver supports integration with homebridge-securitysystem to provide a unif
 - **Off**: Guest access enabled (overrides presence detection)
 - **Home**: Residents present, no guests
 - **Away**: No one present
-- **Night**: Not currently used
+- **Night**: Night mode (same as Home, but preserved when set)
 
 ### Implementation Details
 - When Security System integration is enabled, it replaces the legacy Anyone Motion and Guest Access Lock devices
@@ -96,6 +96,7 @@ The driver supports integration with homebridge-securitysystem to provide a unif
   - Any resident present → Home mode
   - No residents present → Away mode
   - User can manually set Off mode for guest access
+- Only Off mode is preserved when manually set by the user
 - Off mode acts as a presence override - the system behaves as if someone is always present
 
 ## MQTT Behavior Notes
