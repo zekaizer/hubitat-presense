@@ -15,12 +15,15 @@ metadata {
         attribute "lastActivity", "string"
         attribute "childCount", "number"
         attribute "presentCount", "number"
+        attribute "securitySystemStatus", "enum", ["off", "home", "away", "night"]
+        attribute "securitySystemTargetMode", "enum", ["off", "home", "away", "night"]
         
         command "createChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"], [name:"deviceLabel", type:"STRING", description:"Device Label (optional)"]]
         command "removeChildDevice", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) or MAC Address of device to remove"]]
         command "removeAllChildren"
         command "updateChildMacAddress", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newMacAddress", type:"STRING", description:"New MAC Address"]]
         command "updateChildLabel", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newLabel", type:"STRING", description:"New Device Label"]]
+        command "eventSecuritySystem", [[name:"event", type:"STRING", description:"Security system event from webhook (optional)"]]
     }
     
     preferences {
@@ -33,6 +36,11 @@ metadata {
             input "defaultMqttUsername", "string", title: "Default MQTT Username (optional)", required: false
             input "defaultMqttPassword", "password", title: "Default MQTT Password (optional)", required: false
             input "defaultHeartbeatTimeout", "number", title: "Default Heartbeat Timeout (seconds)", defaultValue: 60, range: "5..3600", required: false
+        }
+        section("Security System Integration") {
+            input "securitySystemEnabled", "bool", title: "Enable Security System Integration", defaultValue: false, required: false
+            input "securitySystemUrl", "string", title: "Homebridge Security System URL", description: "e.g., http://192.168.1.100", required: false
+            input "securitySystemPort", "string", title: "Homebridge Security System Port", defaultValue: "8585", required: false
         }
     }
 }
@@ -56,12 +64,25 @@ def initialize() {
     // Initialize MQTT connection
     connectMQTT()
     
-    
-    // Create or find Anyone Presence child device
+    // Always create Anyone Motion device
     createAnyonePresenceDevice()
     
-    // Create or find Guest Presence child device
-    createGuestPresenceDevice()
+    // Create appropriate control devices based on settings
+    if (settings.securitySystemEnabled) {
+        // Initialize Security System mode
+        if (!state.securitySystemMode) {
+            state.securitySystemMode = "home"
+            state.securitySystemTargetMode = "home"
+            sendEvent(name: "securitySystemStatus", value: "home")
+            sendEvent(name: "securitySystemTargetMode", value: "home")
+        } else {
+            sendEvent(name: "securitySystemStatus", value: state.securitySystemMode)
+            sendEvent(name: "securitySystemTargetMode", value: state.securitySystemTargetMode ?: state.securitySystemMode)
+        }
+    } else {
+        // Create Guest Access Lock for legacy mode
+        createGuestPresenceDevice()
+    }
 
     def children = getChildDevices()
         
@@ -227,6 +248,7 @@ def removeAllChildren() {
 
 
 def createAnyonePresenceDevice() {
+    // Always create Anyone Motion device regardless of Security System setting
     // Check if Anyone Presence device already exists
     def anyoneDni = "composite-presence-${device.id}-anyone"
     def anyoneDevice = getChildDevice(anyoneDni)
@@ -267,6 +289,13 @@ def createAnyonePresenceDevice() {
 }
 
 def createGuestPresenceDevice() {
+    // Legacy method - kept for backward compatibility
+    // Only create if Security System is not enabled
+    if (settings.securitySystemEnabled) {
+        if (debugLogging) log.debug "Security System enabled, skipping Guest Access Lock creation"
+        return
+    }
+    
     // Check if Guest Presence device already exists
     def guestDni = "composite-presence-${device.id}-guest"
     def guestDevice = getChildDevice(guestDni)
@@ -306,6 +335,7 @@ def createGuestPresenceDevice() {
     }
 }
 
+
 def configureChildDevice(data) {
     try {
         def deviceId = data.deviceId
@@ -342,7 +372,7 @@ def componentPresenceHandler(childDevice, presenceValue) {
     // This method is called by child devices when their presence changes
     log.info "Child device ${childDevice.getDisplayName()} presence changed to: ${presenceValue}"
     
-    // Use runIn to ensure child device state is fully updated before checking statistics
+    // Just trigger delayed update - all logic will be handled there
     runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
 }
 
@@ -355,8 +385,9 @@ def componentRefresh(childDevice) {
 
 def componentUnlock(childDevice) {
     // Handle Guest Access Lock unlocking (guest access enabled)
+    // Legacy method - only used when Security System is not enabled
     def deviceType = childDevice.getDataValue("deviceType")
-    if (deviceType == "guest") {
+    if (deviceType == "guest" && !settings.securitySystemEnabled) {
         log.info "Guest Access Lock UNLOCKED - Guest access enabled"
         // Update the lock state
         childDevice.sendEvent(name: "lock", value: "unlocked", descriptionText: "${childDevice.displayName} is unlocked")
@@ -367,8 +398,9 @@ def componentUnlock(childDevice) {
 
 def componentLock(childDevice) {
     // Handle Guest Access Lock locking (guest access disabled)
+    // Legacy method - only used when Security System is not enabled
     def deviceType = childDevice.getDataValue("deviceType")
-    if (deviceType == "guest") {
+    if (deviceType == "guest" && !settings.securitySystemEnabled) {
         log.info "Guest Access Lock LOCKED - Guest access disabled"
         // Update the lock state
         childDevice.sendEvent(name: "lock", value: "locked", descriptionText: "${childDevice.displayName} is locked")
@@ -380,21 +412,74 @@ def componentLock(childDevice) {
 def updateChildStatisticsDelayed() {
     // Delayed version of updateChildStatistics to handle timing issues
     if (debugLogging) log.debug "Delayed child statistics update triggered"
+    
+    // Check if we need to notify children about target away
+    if (state.shouldNotifyChildrenTargetAway) {
+        state.shouldNotifyChildrenTargetAway = false
+        notifyChildrenToReevaluate()
+    }
+    
     updateChildStatistics()
+    
+    // Handle Security System mode updates based on transitions
+    if (settings.securitySystemEnabled && state.presenceTransition && state.presenceTransition != "no_change") {
+        handlePresenceTransition()
+    }
+}
+
+def handlePresenceTransition() {
+    def transition = state.presenceTransition
+    def currentMode = state.securitySystemMode ?: "home"
+    
+    if (transition == "someone_arrived") {
+        // Someone arrived (0 → 1+)
+        if (currentMode == "away") {
+            log.info "Someone arrived, changing from away to home"
+            updateSecuritySystemMode("home")
+        }
+    } else if (transition == "everyone_left") {
+        // Everyone left (1+ → 0)
+        
+        // Check if user already initiated away mode (target_mode hint)
+        def targetMode = state.securitySystemTargetMode
+        
+        if (targetMode == "away" && currentMode != "away") {
+            // User already set target to away - confirm it immediately
+            log.info "Target mode is away, confirming immediate transition (skipping delay)"
+            updateSecuritySystemMode("away")
+        } else if (currentMode != "off" && currentMode != "away") {
+            // Normal auto-away logic
+            log.info "Everyone left, changing from ${currentMode} to away"
+            updateSecuritySystemMode("away")
+        }
+    }
+    
+    // Clear the transition flag
+    state.presenceTransition = "no_change"
 }
 
 def updateChildStatistics() {
+    // Store previous count for transition detection
+    def previousPresentCount = device.currentValue("presentCount") ?: 0
+    
     def children = getChildDevices()
     def childCount = 0
     def presentCount = 0
     def guestPresent = false
+    
+    // Check Security System mode first
+    if (settings.securitySystemEnabled && state.securitySystemMode == "off") {
+        guestPresent = true
+        if (debugLogging) log.debug "Security System is in OFF mode - Guest access enabled"
+    }
     
     if (debugLogging) log.debug "Updating child statistics for ${children.size()} children:"
     
     children.each { child ->
         def deviceType = child.getDataValue("deviceType")
         
-        // Check Guest Access Lock
+        
+        // Check Guest Access Lock (legacy mode)
         if (deviceType == "guest") {
             def lockValue = child.currentValue("lock")
             if (lockValue == "unlocked") {
@@ -432,11 +517,23 @@ def updateChildStatistics() {
     
     if (debugLogging) log.debug "Child statistics updated: ${presentCount}/${childCount} present, Guest: ${guestPresent}"
     
-    // Update anyone presence with guest override
+    // Detect presence transitions
+    if (previousPresentCount == 0 && presentCount > 0) {
+        state.presenceTransition = "someone_arrived"
+        log.info "Presence transition detected: someone arrived"
+    } else if (previousPresentCount > 0 && presentCount == 0) {
+        state.presenceTransition = "everyone_left"
+        log.info "Presence transition detected: everyone left"
+    } else {
+        state.presenceTransition = "no_change"
+    }
+    
+    // Always update anyone presence with guest override
     updateAnyonePresence(presentCount, guestPresent)
 }
 
 def updateAnyonePresence(presentCount, guestPresent = false) {
+    // Always update Anyone Motion device
     def anyoneDni = "composite-presence-${device.id}-anyone"
     def anyoneDevice = getChildDevice(anyoneDni)
     if (!anyoneDevice) {
@@ -702,6 +799,22 @@ def updateChildLabel(String deviceId, String newLabel) {
     }
 }
 
+def notifyChildrenToReevaluate() {
+    if (debugLogging) log.debug "Notifying child devices to re-evaluate presence due to target mode change"
+    
+    def children = getChildDevices()
+    children.each { child ->
+        if (child.name == "All-in-One Presence Child") {
+            if (debugLogging) log.debug "Notifying ${child.getDisplayName()} to re-evaluate presence"
+            try {
+                child.evaluateFinalPresence()
+            } catch (Exception e) {
+                if (debugLogging) log.debug "Failed to notify ${child.getDisplayName()}: ${e.message}"
+            }
+        }
+    }
+}
+
 def handleWiFiPresenceHeartbeat(String topic, String payload) {
     try {
         // Extract MAC address from topic
@@ -739,5 +852,144 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         
     } catch (Exception e) {
         log.error "Failed to handle WiFi presence heartbeat: ${e.message}"
+    }
+}
+
+def eventSecuritySystem(String event = null) {
+    if (!settings.securitySystemEnabled) {
+        log.warn "Security System integration is not enabled"
+        return
+    }
+    
+    if (debugLogging) log.debug "Security System event received: ${event}"
+    
+    // Get current status from Security System
+    def status = getSecuritySystemStatus()
+    if (!status) {
+        log.error "Failed to get Security System status"
+        return
+    }
+    
+    if (status.arming) {
+        // System is in transition - ignore
+        if (debugLogging) log.debug "Security System is arming (transitioning), ignoring event"
+        return
+    }
+    
+    // Use current_mode from status
+    def currentMode = status.current_mode
+    def targetMode = status.target_mode
+    log.info "Security System status - current: ${currentMode}, target: ${targetMode}"
+    
+    // Store both modes in state
+    state.securitySystemMode = currentMode
+    state.securitySystemTargetMode = targetMode
+    
+    // Update the Security System status attributes
+    sendEvent(name: "securitySystemStatus", value: currentMode, descriptionText: "Security System is in ${currentMode} mode")
+    sendEvent(name: "securitySystemTargetMode", value: targetMode, descriptionText: "Security System target mode is ${targetMode}")
+    
+    // Log if there's a pending transition
+    if (targetMode != currentMode && debugLogging) {
+        log.debug "Security System has pending transition to ${targetMode}"
+    }
+    
+    // Store flag if we need to notify children about target away
+    if (targetMode == "away" && currentMode != "away") {
+        log.info "Target mode set to away - will notify child devices"
+        state.shouldNotifyChildrenTargetAway = true
+    }
+    
+    // If mode is off, it acts like guest access is enabled
+    // Trigger presence update with delay to ensure state is saved
+    runIn(1, "updateChildStatisticsDelayed", [overwrite: true])
+}
+
+def getSecuritySystemStatus() {
+    if (!settings.securitySystemUrl || !settings.securitySystemPort) {
+        log.error "Security System URL or port not configured"
+        return null
+    }
+    
+    try {
+        def result = null
+        String url = "${settings.securitySystemUrl}:${settings.securitySystemPort}/status"
+        
+        if (debugLogging) log.debug "Getting Security System status from: ${url}"
+        
+        def params = [
+            uri: url,
+            timeout: 10,
+            ignoreSSLIssues: true
+        ]
+        
+        httpGet(params) { response ->
+            if (response.status == 200) {
+                result = response.data
+                if (debugLogging) log.debug "Security System status: ${result}"
+            } else {
+                log.error "Failed to get Security System status: ${response.status}"
+            }
+        }
+        
+        return result
+        
+    } catch (Exception e) {
+        log.error "Exception while getting Security System status: ${e.message}"
+        return null
+    }
+}
+
+def updateSecuritySystemMode(String mode) {
+    if (!settings.securitySystemEnabled || !settings.securitySystemUrl || !settings.securitySystemPort) {
+        if (debugLogging) log.debug "Security System integration not properly configured"
+        return
+    }
+    
+    // Don't update if mode is off (guest access)
+    if (state.securitySystemMode == "off") {
+        if (debugLogging) log.debug "Security System is in off mode (guest access), skipping automatic update"
+        return
+    }
+    
+    // If in night mode and trying to set home, keep it as night
+    if (state.securitySystemMode == "night" && mode == "home") {
+        if (debugLogging) log.debug "Security System is in night mode, keeping night instead of home"
+        mode = "night"
+    }
+    
+    try {
+        String url = "${settings.securitySystemUrl}:${settings.securitySystemPort}/${mode}"
+        
+        if (debugLogging) log.debug "Sending Security System mode update: ${mode} to ${url}"
+        
+        def params = [
+            uri: url,
+            timeout: 10,
+            ignoreSSLIssues: true
+        ]
+        
+        httpGet(params) { response ->
+            if (response.status == 200) {
+                log.info "Successfully sent Security System mode update: ${mode}"
+                
+                // Get actual status to confirm the change
+                def status = getSecuritySystemStatus()
+                if (status && !status.arming) {
+                    // Update local state with confirmed mode
+                    state.securitySystemMode = status.current_mode
+                    sendEvent(name: "securitySystemStatus", value: status.current_mode, descriptionText: "Security System is in ${status.current_mode} mode")
+                    
+                    if (status.current_mode != mode && debugLogging) {
+                        log.debug "Note: Requested ${mode} but system is in ${status.current_mode} mode"
+                    }
+                }
+            } else {
+                log.error "Failed to update Security System mode: ${response.status}"
+            }
+        }
+        
+    } catch (Exception e) {
+        log.error "Exception while updating Security System mode: ${e.message}"
     }
 }
