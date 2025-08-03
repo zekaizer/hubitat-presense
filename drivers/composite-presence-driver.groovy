@@ -401,6 +401,25 @@ def componentPresenceHandler(childDevice, presenceValue) {
     }
     // Everyone left (1+ → 0)
     else if (previousPresentCount > 0 && currentPresentCount == 0) {
+        // Check if user already initiated away mode (target_mode hint)
+        // Use stored target mode if available, otherwise fetch current status
+        def targetMode = state.securitySystemTargetMode
+        
+        if (!targetMode) {
+            def status = getSecuritySystemStatus()
+            if (status) {
+                targetMode = status.target_mode
+            }
+        }
+        
+        if (targetMode == "away" && currentMode != "away") {
+            // User already set target to away - confirm it immediately
+            log.info "Target mode is away, confirming immediate transition (skipping delay)"
+            updateSecuritySystemMode("away")
+            return  // Skip the normal flow since we're handling it directly
+        }
+        
+        // Normal auto-away logic
         if (currentMode != "off" && currentMode != "away") {
             newMode = "away"
             shouldUpdateMode = true
@@ -851,13 +870,20 @@ def eventSecuritySystem(String event = null) {
     
     // Use current_mode from status
     def currentMode = status.current_mode
-    log.info "Security System mode confirmed as: ${currentMode}"
+    def targetMode = status.target_mode
+    log.info "Security System status - current: ${currentMode}, target: ${targetMode}"
     
-    // Store the mode in state
+    // Store both modes in state
     state.securitySystemMode = currentMode
+    state.securitySystemTargetMode = targetMode
     
     // Update the Security System status attribute
     sendEvent(name: "securitySystemStatus", value: currentMode, descriptionText: "Security System is in ${currentMode} mode")
+    
+    // Log if there's a pending transition
+    if (targetMode != currentMode && debugLogging) {
+        log.debug "Security System has pending transition to ${targetMode}"
+    }
     
     // If mode is off, it acts like guest access is enabled
     // Trigger presence update with delay to ensure state is saved

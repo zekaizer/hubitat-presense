@@ -286,17 +286,25 @@ def evaluateFinalPresence() {
     } else {
         // WiFi disconnected
         
-        // Check if parent's Security System is in away mode (hint from user)
+        // Check if parent's Security System is in away mode or targeting away (hint from user)
         def parentSecurityMode = null
+        def parentTargetMode = null
         if (parent && parent.hasAttribute("securitySystemStatus")) {
             parentSecurityMode = parent.currentValue("securitySystemStatus")
-            if (debugLogging) log.debug "Parent Security System mode: ${parentSecurityMode}"
+            // Check if parent stores target mode in state
+            if (parent.hasCommand("getSecuritySystemStatus")) {
+                def parentState = parent.currentState("securitySystemTargetMode")
+                if (parentState) {
+                    parentTargetMode = parentState.value
+                }
+            }
+            if (debugLogging) log.debug "Parent Security System - current: ${parentSecurityMode}, target: ${parentTargetMode}"
         }
         
-        if (parentSecurityMode == "away") {
-            // User explicitly set away mode - WiFi disconnect alone is enough
+        if (parentSecurityMode == "away" || parentTargetMode == "away") {
+            // User explicitly set away mode or targeting away - WiFi disconnect alone is enough
             finalPresence = "not present"
-            if (debugLogging) log.debug "Security System is away - WiFi disconnect triggers not present"
+            if (debugLogging) log.debug "Security System is/targeting away - WiFi disconnect triggers not present"
         } else if (gpsPresence == "exited") {
             // Normal behavior: GPS exited - set to not present
             finalPresence = "not present"
