@@ -15,6 +15,7 @@ metadata {
         attribute "lastActivity", "string"
         attribute "childCount", "number"
         attribute "presentCount", "number"
+        attribute "securitySystemStatus", "enum", ["off", "home", "away", "night"]
         
         command "createChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"], [name:"deviceLabel", type:"STRING", description:"Device Label (optional)"]]
         command "removeChildDevice", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) or MAC Address of device to remove"]]
@@ -64,8 +65,13 @@ def initialize() {
     
     // Create appropriate control devices based on settings
     if (settings.securitySystemEnabled) {
-        // Create or find Security System device
-        createSecuritySystemDevice()
+        // Initialize Security System mode
+        if (!state.securitySystemMode) {
+            state.securitySystemMode = "home"
+            sendEvent(name: "securitySystemStatus", value: "home")
+        } else {
+            sendEvent(name: "securitySystemStatus", value: state.securitySystemMode)
+        }
     } else {
         // Create or find legacy devices
         createAnyonePresenceDevice()
@@ -329,48 +335,6 @@ def createGuestPresenceDevice() {
     }
 }
 
-def createSecuritySystemDevice() {
-    // Check if Security System device already exists
-    def securityDni = "composite-presence-${device.id}-security"
-    def securityDevice = getChildDevice(securityDni)
-    
-    if (!securityDevice) {
-        try {
-            if (debugLogging) log.debug "Creating Security System device using Generic Component Virtual"
-            
-            securityDevice = addChildDevice(
-                "hubitat",
-                "Generic Component Virtual",
-                securityDni,
-                [
-                    name: "Security System",
-                    label: "Security System",
-                    isComponent: true
-                ]
-            )
-            
-            if (securityDevice) {
-                if (debugLogging) log.debug "Successfully created Security System device: ${securityDevice.getDisplayName()}"
-                
-                // Mark this as the special "security" device
-                securityDevice.updateDataValue("deviceType", "security")
-                
-                // Add custom attribute for security system status
-                securityDevice.sendEvent(name: "securitySystemStatus", value: "home", descriptionText: "${securityDevice.displayName} is in home mode")
-                
-                // Store current mode in state
-                state.securitySystemMode = "home"
-            } else {
-                log.error "Failed to create Security System device"
-            }
-            
-        } catch (Exception e) {
-            log.error "Exception while creating Security System device: ${e.message}"
-        }
-    } else {
-        if (debugLogging) log.debug "Security System device already exists: ${securityDevice.getDisplayName()}"
-    }
-}
 
 def configureChildDevice(data) {
     try {
@@ -457,19 +421,17 @@ def updateChildStatistics() {
     def presentCount = 0
     def guestPresent = false
     
+    // Check Security System mode first
+    if (settings.securitySystemEnabled && state.securitySystemMode == "off") {
+        guestPresent = true
+        if (debugLogging) log.debug "Security System is in OFF mode - Guest access enabled"
+    }
+    
     if (debugLogging) log.debug "Updating child statistics for ${children.size()} children:"
     
     children.each { child ->
         def deviceType = child.getDataValue("deviceType")
         
-        // Check Security System mode
-        if (deviceType == "security") {
-            if (settings.securitySystemEnabled && state.securitySystemMode == "off") {
-                guestPresent = true
-                if (debugLogging) log.debug "  Security System is in OFF mode - Guest access enabled"
-            }
-            return
-        }
         
         // Check Guest Access Lock (legacy mode)
         if (deviceType == "guest") {
@@ -846,13 +808,8 @@ def setSecuritySystemMode(String mode) {
     // Store the mode in state
     state.securitySystemMode = mode
     
-    // Update the Security System device
-    def securityDni = "composite-presence-${device.id}-security"
-    def securityDevice = getChildDevice(securityDni)
-    
-    if (securityDevice) {
-        securityDevice.sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "${securityDevice.displayName} is in ${mode} mode")
-    }
+    // Update the Security System status attribute
+    sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "Security System is in ${mode} mode")
     
     // If mode is off, it acts like guest access is enabled
     // Trigger presence update with delay to ensure state is saved
@@ -888,13 +845,8 @@ def updateSecuritySystemMode(String mode) {
                 // Update local state to match
                 state.securitySystemMode = mode
                 
-                // Update the Security System device
-                def securityDni = "composite-presence-${device.id}-security"
-                def securityDevice = getChildDevice(securityDni)
-                
-                if (securityDevice) {
-                    securityDevice.sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "${securityDevice.displayName} is in ${mode} mode")
-                }
+                // Update the Security System status attribute
+                sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "Security System is in ${mode} mode")
             } else {
                 log.error "Failed to update Security System mode: ${response.status}"
             }
