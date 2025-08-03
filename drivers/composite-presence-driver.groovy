@@ -236,6 +236,13 @@ def removeAllChildren() {
 
 
 def createAnyonePresenceDevice() {
+    // Legacy method - kept for backward compatibility
+    // Only create if Security System is not enabled
+    if (settings.securitySystemEnabled) {
+        if (debugLogging) log.debug "Security System enabled, skipping Anyone Motion device creation"
+        return
+    }
+    
     // Check if Anyone Presence device already exists
     def anyoneDni = "composite-presence-${device.id}-anyone"
     def anyoneDevice = getChildDevice(anyoneDni)
@@ -276,6 +283,13 @@ def createAnyonePresenceDevice() {
 }
 
 def createGuestPresenceDevice() {
+    // Legacy method - kept for backward compatibility
+    // Only create if Security System is not enabled
+    if (settings.securitySystemEnabled) {
+        if (debugLogging) log.debug "Security System enabled, skipping Guest Access Lock creation"
+        return
+    }
+    
     // Check if Guest Presence device already exists
     def guestDni = "composite-presence-${device.id}-guest"
     def guestDevice = getChildDevice(guestDni)
@@ -407,8 +421,9 @@ def componentRefresh(childDevice) {
 
 def componentUnlock(childDevice) {
     // Handle Guest Access Lock unlocking (guest access enabled)
+    // Legacy method - only used when Security System is not enabled
     def deviceType = childDevice.getDataValue("deviceType")
-    if (deviceType == "guest") {
+    if (deviceType == "guest" && !settings.securitySystemEnabled) {
         log.info "Guest Access Lock UNLOCKED - Guest access enabled"
         // Update the lock state
         childDevice.sendEvent(name: "lock", value: "unlocked", descriptionText: "${childDevice.displayName} is unlocked")
@@ -419,8 +434,9 @@ def componentUnlock(childDevice) {
 
 def componentLock(childDevice) {
     // Handle Guest Access Lock locking (guest access disabled)
+    // Legacy method - only used when Security System is not enabled
     def deviceType = childDevice.getDataValue("deviceType")
-    if (deviceType == "guest") {
+    if (deviceType == "guest" && !settings.securitySystemEnabled) {
         log.info "Guest Access Lock LOCKED - Guest access disabled"
         // Update the lock state
         childDevice.sendEvent(name: "lock", value: "locked", descriptionText: "${childDevice.displayName} is locked")
@@ -508,6 +524,12 @@ def updateChildStatistics() {
 }
 
 def updateAnyonePresence(presentCount, guestPresent = false) {
+    // Legacy method - only used when Security System is not enabled
+    if (settings.securitySystemEnabled) {
+        if (debugLogging) log.debug "Security System enabled, skipping Anyone Motion update"
+        return
+    }
+    
     def anyoneDni = "composite-presence-${device.id}-anyone"
     def anyoneDevice = getChildDevice(anyoneDni)
     if (!anyoneDevice) {
