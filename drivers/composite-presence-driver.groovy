@@ -21,6 +21,7 @@ metadata {
         command "removeAllChildren"
         command "updateChildMacAddress", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newMacAddress", type:"STRING", description:"New MAC Address"]]
         command "updateChildLabel", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newLabel", type:"STRING", description:"New Device Label"]]
+        command "setSecuritySystemMode", [[name:"mode", type:"ENUM", constraints: ["off", "home", "away", "night"], description:"Security system mode from webhook"]]
     }
     
     preferences {
@@ -33,6 +34,11 @@ metadata {
             input "defaultMqttUsername", "string", title: "Default MQTT Username (optional)", required: false
             input "defaultMqttPassword", "password", title: "Default MQTT Password (optional)", required: false
             input "defaultHeartbeatTimeout", "number", title: "Default Heartbeat Timeout (seconds)", defaultValue: 60, range: "5..3600", required: false
+        }
+        section("Security System Integration") {
+            input "securitySystemEnabled", "bool", title: "Enable Security System Integration", defaultValue: false, required: false
+            input "securitySystemUrl", "string", title: "Homebridge Security System URL", description: "e.g., http://192.168.1.100", required: false
+            input "securitySystemPort", "string", title: "Homebridge Security System Port", defaultValue: "8585", required: false
         }
     }
 }
