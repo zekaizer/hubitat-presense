@@ -62,12 +62,15 @@ def initialize() {
     // Initialize MQTT connection
     connectMQTT()
     
-    
-    // Create or find Anyone Presence child device
-    createAnyonePresenceDevice()
-    
-    // Create or find Guest Presence child device
-    createGuestPresenceDevice()
+    // Create appropriate control devices based on settings
+    if (settings.securitySystemEnabled) {
+        // Create or find Security System device
+        createSecuritySystemDevice()
+    } else {
+        // Create or find legacy devices
+        createAnyonePresenceDevice()
+        createGuestPresenceDevice()
+    }
 
     def children = getChildDevices()
         
@@ -309,6 +312,49 @@ def createGuestPresenceDevice() {
         }
     } else {
         if (debugLogging) log.debug "Guest Access Lock already exists: ${guestDevice.getDisplayName()}"
+    }
+}
+
+def createSecuritySystemDevice() {
+    // Check if Security System device already exists
+    def securityDni = "composite-presence-${device.id}-security"
+    def securityDevice = getChildDevice(securityDni)
+    
+    if (!securityDevice) {
+        try {
+            if (debugLogging) log.debug "Creating Security System device using Generic Component Virtual"
+            
+            securityDevice = addChildDevice(
+                "hubitat",
+                "Generic Component Virtual",
+                securityDni,
+                [
+                    name: "Security System",
+                    label: "Security System",
+                    isComponent: true
+                ]
+            )
+            
+            if (securityDevice) {
+                if (debugLogging) log.debug "Successfully created Security System device: ${securityDevice.getDisplayName()}"
+                
+                // Mark this as the special "security" device
+                securityDevice.updateDataValue("deviceType", "security")
+                
+                // Add custom attribute for security system status
+                securityDevice.sendEvent(name: "securitySystemStatus", value: "home", descriptionText: "${securityDevice.displayName} is in home mode")
+                
+                // Store current mode in state
+                state.securitySystemMode = "home"
+            } else {
+                log.error "Failed to create Security System device"
+            }
+            
+        } catch (Exception e) {
+            log.error "Exception while creating Security System device: ${e.message}"
+        }
+    } else {
+        if (debugLogging) log.debug "Security System device already exists: ${securityDevice.getDisplayName()}"
     }
 }
 
