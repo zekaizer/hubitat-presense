@@ -41,15 +41,18 @@ def updated() {
 
 def initialize() {
     if (debugLogging) log.debug "All-in-One Presence Driver initialized"
-    
+
     // Restore saved state or set initial state
     restoreState()
-    
+
+    // Backup schedule to recover runIn if lost (every 5 minutes)
+    schedule("0 */5 * * * ?", "ensureHeartbeatMonitoring")
+
     // Start heartbeat timeout monitoring if we have a saved heartbeat
     if (state.lastHeartbeatEpoch) {
         scheduleHeartbeatTimeoutCheck()
     }
-    
+
     // If this is a component device, MQTT is handled by parent
     if (!parent) {
         log.warn "This device is designed to work as a component of Composite Presence Driver"
@@ -179,16 +182,11 @@ def restoreState() {
 
 
 def scheduleHeartbeatTimeoutCheck() {
-    // Get timeout from parent or use default (60 seconds, minimum 5 seconds)
-    Integer timeoutSeconds = 60
-    if (parent) {
-        def parentTimeout = parent.getSetting("defaultHeartbeatTimeout")
-        timeoutSeconds = Math.max(5, parentTimeout ?: 60)
-    }
-    
+    Integer timeoutSeconds = getHeartbeatTimeout()
+
     // Schedule timeout check (overwrite any existing schedule)
     runIn(timeoutSeconds, "checkHeartbeatTimeout", [overwrite: true])
-    
+
     if (debugLogging) log.debug "Scheduled heartbeat timeout check in ${timeoutSeconds} seconds"
 }
 
@@ -199,34 +197,28 @@ def checkHeartbeatTimeout() {
             if (debugLogging) log.debug "No heartbeat epoch stored, skipping timeout check"
             return
         }
-        
+
         Long currentTime = now() / 1000 // Convert to seconds
         Long timeSinceLastHeartbeat = currentTime - lastHeartbeatEpoch
-        
-        // Get timeout from parent or use default
-        Integer timeoutSeconds = 60
-        if (parent) {
-            def parentTimeout = parent.getSetting("defaultHeartbeatTimeout")
-            timeoutSeconds = Math.max(5, parentTimeout ?: 60)
-        }
-        
+        Integer timeoutSeconds = getHeartbeatTimeout()
+
         if (debugLogging) {
             log.debug "Checking heartbeat timeout: ${timeSinceLastHeartbeat}s since last heartbeat (timeout: ${timeoutSeconds}s)"
         }
-        
+
         if (timeSinceLastHeartbeat >= timeoutSeconds) {
             // Heartbeat timeout - set WiFi presence to disconnected
             if (debugLogging) log.debug "WiFi heartbeat timeout detected"
             updateWiFiPresence("disconnected")
         } else {
             // Still within timeout period, schedule another check
-            Integer remainingTime = timeoutSeconds - timeSinceLastHeartbeat
+            Long remainingTime = timeoutSeconds - timeSinceLastHeartbeat
             if (remainingTime > 0) {
-                runIn(remainingTime.toInteger(), "checkHeartbeatTimeout", [overwrite: true])
+                runIn(remainingTime.intValue(), "checkHeartbeatTimeout", [overwrite: true])
                 if (debugLogging) log.debug "Rescheduled heartbeat timeout check in ${remainingTime} seconds"
             }
         }
-        
+
     } catch (Exception e) {
         log.error "Failed to check heartbeat timeout: ${e.message}"
     }
@@ -349,4 +341,42 @@ def gpsEnter() {
 def gpsExit() {
     if (debugLogging) log.debug "GPS exit event received"
     updateGPSPresence("exited")
+}
+
+private Integer getHeartbeatTimeout() {
+    Integer timeout = 60
+    if (parent) {
+        def parentTimeout = parent.getSetting("defaultHeartbeatTimeout")
+        timeout = Math.max(5, parentTimeout ?: 60)
+    }
+    return timeout
+}
+
+def ensureHeartbeatMonitoring() {
+    // Recovery mechanism: ensure runIn schedule exists
+    // This is called periodically by schedule() to recover from runIn loss
+    try {
+        if (!state.lastHeartbeatEpoch) {
+            if (debugLogging) log.debug "ensureHeartbeatMonitoring: no heartbeat epoch, skipping"
+            return
+        }
+
+        Long currentTime = now() / 1000
+        Long timeSinceLastHeartbeat = currentTime - state.lastHeartbeatEpoch
+        Integer timeoutSeconds = getHeartbeatTimeout()
+
+        if (timeSinceLastHeartbeat >= timeoutSeconds) {
+            // Already timed out - check if we missed it
+            if (device.currentValue("wifiPresence") == "connected") {
+                log.warn "ensureHeartbeatMonitoring: detected missed timeout (${timeSinceLastHeartbeat}s since last heartbeat)"
+                updateWiFiPresence("disconnected")
+            }
+        } else {
+            // Not yet timed out - ensure runIn is scheduled
+            scheduleHeartbeatTimeoutCheck()
+            if (debugLogging) log.debug "ensureHeartbeatMonitoring: refreshed runIn schedule"
+        }
+    } catch (Exception e) {
+        log.error "ensureHeartbeatMonitoring failed: ${e.message}"
+    }
 }
