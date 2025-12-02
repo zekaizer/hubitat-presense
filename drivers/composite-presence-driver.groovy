@@ -17,13 +17,15 @@ metadata {
         attribute "presentCount", "number"
         attribute "securitySystemStatus", "enum", ["off", "home", "away", "night"]
         attribute "securitySystemTargetMode", "enum", ["off", "home", "away", "night"]
-        
+        attribute "mqttConnectionStatus", "enum", ["connected", "disconnected", "connecting", "error"]
+
         command "createChildDevice", [[name:"macAddress", type:"STRING", description:"MAC Address (format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)"], [name:"deviceLabel", type:"STRING", description:"Device Label (optional)"]]
         command "removeChildDevice", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) or MAC Address of device to remove"]]
         command "removeAllChildren"
         command "updateChildMacAddress", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newMacAddress", type:"STRING", description:"New MAC Address"]]
         command "updateChildLabel", [[name:"deviceId", type:"STRING", description:"Device ID (DNI) of child to update"], [name:"newLabel", type:"STRING", description:"New Device Label"]]
         command "eventSecuritySystem", [[name:"event", type:"STRING", description:"Security system event from webhook (optional)"]]
+        command "reconnectMQTT"
     }
     
     preferences {
@@ -559,7 +561,7 @@ def updateAnyonePresence(presentCount, guestPresent = false) {
 def restoreState() {
     // Restore saved activity or set default
     String savedActivity = state.lastActivity
-    
+
     if (savedActivity) {
         sendEvent(name: "lastActivity", value: savedActivity)
     } else {
@@ -567,10 +569,14 @@ def restoreState() {
         sendEvent(name: "lastActivity", value: currentTime)
         state.lastActivity = currentTime
     }
-    
+
     // Initialize child statistics
     sendEvent(name: "childCount", value: 0)
     sendEvent(name: "presentCount", value: 0)
+
+    // Initialize MQTT connection status
+    sendEvent(name: "mqttConnectionStatus", value: "disconnected")
+    state.mqttReconnectAttempts = 0
 }
 
 def normalizeMacAddress(String macAddr) {
@@ -603,32 +609,74 @@ def connectMQTT() {
     try {
         if (!settings.defaultMqttBroker) {
             if (debugLogging) log.debug "MQTT Broker not configured"
+            sendEvent(name: "mqttConnectionStatus", value: "disconnected")
             return
         }
-        
+
         if (debugLogging) log.debug "Connecting to MQTT broker: ${settings.defaultMqttBroker}:${settings.defaultMqttPort}"
-        
+        sendEvent(name: "mqttConnectionStatus", value: "connecting")
+
         // Disconnect if already connected
         try {
             interfaces.mqtt.disconnect()
         } catch (Exception e) {
             // Ignore disconnect errors
         }
-        
+
         // Connect to MQTT broker
         String brokerUrl = "tcp://${settings.defaultMqttBroker}:${settings.defaultMqttPort ?: '1883'}"
         String clientId = "hubitat-composite-presence-${device.id}"
         String username = settings.defaultMqttUsername ?: null
         String password = settings.defaultMqttPassword ?: null
-        
+
         interfaces.mqtt.connect(brokerUrl, clientId, username, password)
-        
+
         // Subscribe to topics after connection
         runIn(2, "subscribeToChildTopics")
-        
+
     } catch (Exception e) {
         log.error "Failed to connect to MQTT: ${e.message}"
+        sendEvent(name: "mqttConnectionStatus", value: "error")
+        scheduleReconnect()
     }
+}
+
+def reconnectMQTT() {
+    // Manual reconnect command - reset retry count
+    log.info "Manual MQTT reconnect requested"
+    state.mqttReconnectAttempts = 0
+    unschedule("attemptMqttReconnect")
+    connectMQTT()
+}
+
+def scheduleReconnect() {
+    // Initialize reconnect attempts counter if not set
+    if (state.mqttReconnectAttempts == null) {
+        state.mqttReconnectAttempts = 0
+    }
+
+    // Max attempts before giving up (will retry on next initialize or manual reconnect)
+    Integer maxAttempts = 10
+    if (state.mqttReconnectAttempts >= maxAttempts) {
+        log.warn "MQTT reconnect: max attempts (${maxAttempts}) reached, stopping auto-reconnect"
+        sendEvent(name: "mqttConnectionStatus", value: "error")
+        return
+    }
+
+    // Exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s, 300s (max 5 min)
+    Integer baseDelay = 5
+    Integer maxDelay = 300
+    Integer delay = Math.min(baseDelay * Math.pow(2, state.mqttReconnectAttempts).intValue(), maxDelay)
+
+    state.mqttReconnectAttempts++
+
+    log.info "MQTT reconnect: scheduling attempt ${state.mqttReconnectAttempts} in ${delay} seconds"
+    runIn(delay, "attemptMqttReconnect")
+}
+
+def attemptMqttReconnect() {
+    if (debugLogging) log.debug "MQTT reconnect: attempting reconnection (attempt ${state.mqttReconnectAttempts})"
+    connectMQTT()
 }
 
 def subscribeToChildTopics() {
@@ -696,8 +744,22 @@ def unsubscribeFromMacAddress(String macAddress) {
 
 def mqttClientStatus(String status) {
     if (debugLogging) log.debug "MQTT client status: ${status}"
-    if (status == "connected") {
+
+    if (status.startsWith("Status: Connection succeeded")) {
+        // Connection successful
+        log.info "MQTT connected successfully"
+        sendEvent(name: "mqttConnectionStatus", value: "connected")
+        state.mqttReconnectAttempts = 0
         subscribeToChildTopics()
+    } else if (status.startsWith("Error:") || status.startsWith("Status: Connection lost")) {
+        // Connection error or lost
+        log.warn "MQTT connection issue: ${status}"
+        sendEvent(name: "mqttConnectionStatus", value: "disconnected")
+        scheduleReconnect()
+    } else if (status.startsWith("Status: Disconnected")) {
+        // Clean disconnect (intentional)
+        if (debugLogging) log.debug "MQTT disconnected cleanly"
+        sendEvent(name: "mqttConnectionStatus", value: "disconnected")
     }
 }
 
