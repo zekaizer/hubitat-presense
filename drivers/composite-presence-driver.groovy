@@ -637,7 +637,7 @@ def connectMQTT() {
         interfaces.mqtt.connect(brokerUrl, clientId, username, password)
 
         // Subscribe to topics after connection
-        runIn(2, "subscribeToChildTopics")
+        runIn(2, "subscribeToChildTopics", [overwrite: true])
 
     } catch (Exception e) {
         log.error "Failed to connect to MQTT: ${e.message}"
@@ -673,7 +673,7 @@ def scheduleReconnect() {
     state.mqttReconnectAttempts++
 
     log.info "MQTT reconnect: scheduling attempt ${state.mqttReconnectAttempts} in ${delay} seconds"
-    runIn(delay, "attemptMqttReconnect")
+    runIn(delay, "attemptMqttReconnect", [overwrite: true])
 }
 
 def attemptMqttReconnect() {
