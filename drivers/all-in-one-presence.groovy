@@ -1,10 +1,14 @@
 /**
  *  All-in-One Presence Driver
- *  
+ *
  *  Copyright (c) 2025 Luke Lee
  *  Licensed under the MIT License
  *
  */
+
+// Constants
+@groovy.transform.Field static final Integer HEARTBEAT_FRESHNESS_SECONDS = 30
+@groovy.transform.Field static final Integer DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 60
 
 metadata {
     definition (name: "All-in-One Presence Driver", namespace: "zekaizer", author: "Luke Lee", importUrl: "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/all-in-one-presence.groovy") {
@@ -81,9 +85,9 @@ def componentHandleHeartbeat(Long epochTime) {
         state.lastHeartbeat = heartbeatStr
         state.lastHeartbeatEpoch = epochTime
         
-        // Check if heartbeat is recent (within last 30 seconds)
+        // Check if heartbeat is recent (within freshness threshold)
         Long timeDiff = currentTime - epochTime
-        if (timeDiff <= 30) {
+        if (timeDiff <= HEARTBEAT_FRESHNESS_SECONDS) {
             // WiFi is connected
             updateWiFiPresence("connected")
             
@@ -344,10 +348,10 @@ def gpsExit() {
 }
 
 private Integer getHeartbeatTimeout() {
-    Integer timeout = 60
+    Integer timeout = DEFAULT_HEARTBEAT_TIMEOUT_SECONDS
     if (parent) {
         def parentTimeout = parent.getSetting("defaultHeartbeatTimeout")
-        timeout = Math.max(5, parentTimeout ?: 60)
+        timeout = Math.max(5, parentTimeout ?: DEFAULT_HEARTBEAT_TIMEOUT_SECONDS)
     }
     return timeout
 }
