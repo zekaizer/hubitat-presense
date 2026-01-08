@@ -279,9 +279,9 @@ def evaluateFinalPresence() {
         // WiFi disconnected
         
         // Check if parent's Security System is in away mode or targeting away (hint from user)
-        def parentSecurityMode = parent.currentValue("securitySystemStatus")
+        def parentSecurityMode = parent?.currentValue("securitySystemStatus")
         // Get target mode from parent
-        def parentTargetMode = parent.currentValue("securitySystemTargetMode")
+        def parentTargetMode = parent?.currentValue("securitySystemTargetMode")
 
         if (debugLogging) log.debug "Parent Security System - current: ${parentSecurityMode}, target: ${parentTargetMode}"
         
