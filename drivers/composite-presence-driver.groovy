@@ -1,12 +1,17 @@
 /**
  *  Composite Presence Driver
- *  
+ *
  *  Copyright (c) 2025 Luke Lee
  *  Licensed under the MIT License
  *
  *  Parent driver that aggregates multiple All-in-One Presence devices
  *  to create "anyone home" functionality
  */
+
+// Constants for MQTT reconnection
+@groovy.transform.Field static final Integer MQTT_RECONNECT_BASE_DELAY_SECONDS = 5
+@groovy.transform.Field static final Integer MQTT_RECONNECT_MAX_DELAY_SECONDS = 300
+@groovy.transform.Field static final Integer MQTT_RECONNECT_MAX_ATTEMPTS = 10
 
 metadata {
     definition (name: "Composite Presence Driver", namespace: "zekaizer", author: "Luke Lee", importUrl: "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/composite-presence-driver.groovy") {
@@ -632,7 +637,7 @@ def connectMQTT() {
         interfaces.mqtt.connect(brokerUrl, clientId, username, password)
 
         // Subscribe to topics after connection
-        runIn(2, "subscribeToChildTopics")
+        runIn(2, "subscribeToChildTopics", [overwrite: true])
 
     } catch (Exception e) {
         log.error "Failed to connect to MQTT: ${e.message}"
@@ -656,22 +661,19 @@ def scheduleReconnect() {
     }
 
     // Max attempts before giving up (will retry on next initialize or manual reconnect)
-    Integer maxAttempts = 10
-    if (state.mqttReconnectAttempts >= maxAttempts) {
-        log.warn "MQTT reconnect: max attempts (${maxAttempts}) reached, stopping auto-reconnect"
+    if (state.mqttReconnectAttempts >= MQTT_RECONNECT_MAX_ATTEMPTS) {
+        log.warn "MQTT reconnect: max attempts (${MQTT_RECONNECT_MAX_ATTEMPTS}) reached, stopping auto-reconnect"
         sendEvent(name: "mqttConnectionStatus", value: "error")
         return
     }
 
     // Exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s, 300s (max 5 min)
-    Integer baseDelay = 5
-    Integer maxDelay = 300
-    Integer delay = Math.min(baseDelay * Math.pow(2, state.mqttReconnectAttempts).intValue(), maxDelay)
+    Integer delay = Math.min(MQTT_RECONNECT_BASE_DELAY_SECONDS * Math.pow(2, state.mqttReconnectAttempts).intValue(), MQTT_RECONNECT_MAX_DELAY_SECONDS)
 
     state.mqttReconnectAttempts++
 
     log.info "MQTT reconnect: scheduling attempt ${state.mqttReconnectAttempts} in ${delay} seconds"
-    runIn(delay, "attemptMqttReconnect")
+    runIn(delay, "attemptMqttReconnect", [overwrite: true])
 }
 
 def attemptMqttReconnect() {
