@@ -94,7 +94,7 @@ def componentHandleHeartbeat(Long epochTime) {
             // Schedule heartbeat timeout check
             scheduleHeartbeatTimeoutCheck()
         } else {
-            if (debugLogging) log.debug "Heartbeat is too old (${timeDiff} seconds), ignoring"
+            log.warn "Heartbeat is too old (${timeDiff} seconds), ignoring"
         }
         
     } catch (Exception e) {

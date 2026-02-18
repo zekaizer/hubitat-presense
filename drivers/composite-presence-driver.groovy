@@ -124,7 +124,7 @@ def parse(String description) {
         }
         
     } catch (Exception e) {
-        if (debugLogging) log.debug "Failed to parse MQTT message: ${e.message}"
+        log.warn "Failed to parse MQTT message: ${e.message}"
     }
 }
 
@@ -618,7 +618,7 @@ def connectMQTT() {
             return
         }
 
-        if (debugLogging) log.debug "Connecting to MQTT broker: ${settings.defaultMqttBroker}:${settings.defaultMqttPort}"
+        log.info "Connecting to MQTT broker: ${settings.defaultMqttBroker}:${settings.defaultMqttPort}"
         sendEvent(name: "mqttConnectionStatus", value: "connecting")
 
         // Disconnect if already connected
@@ -691,9 +691,7 @@ def subscribeToChildTopics() {
             }
         }
         
-        if (debugLogging) {
-            log.debug "Subscribed to MQTT topics for ${children.size()} child devices"
-        }
+        log.info "Subscribed to MQTT topics for ${children.size()} child devices"
         
     } catch (Exception e) {
         log.error "Failed to subscribe to child topics: ${e.message}"
@@ -760,7 +758,7 @@ def mqttClientStatus(String status) {
         scheduleReconnect()
     } else if (status.startsWith("Status: Disconnected")) {
         // Clean disconnect (intentional)
-        if (debugLogging) log.debug "MQTT disconnected cleanly"
+        log.info "MQTT disconnected cleanly"
         sendEvent(name: "mqttConnectionStatus", value: "disconnected")
     }
 }
@@ -776,9 +774,7 @@ def findChildByMacAddress(String macAddress) {
         def normalizedChildMac = normalizeMacAddress(childMac)
         def normalizedSearchMac = normalizeMacAddress(macAddress)
         
-        if (debugLogging) {
-            log.debug "Comparing child MAC '${childMac}' (normalized: '${normalizedChildMac}') with search MAC '${macAddress}' (normalized: '${normalizedSearchMac}')"
-        }
+        if (debugLogging) log.debug "Comparing child MAC '${childMac}' (normalized: '${normalizedChildMac}') with search MAC '${macAddress}' (normalized: '${normalizedSearchMac}')"
         
         return childMac && normalizedChildMac == normalizedSearchMac
     }
@@ -898,7 +894,7 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         def childDevice = findChildByMacAddress(macAddress)
         
         if (!childDevice) {
-            if (debugLogging) log.debug "No child device found for MAC: ${macFromTopic}"
+            log.warn "No child device found for MAC: ${macFromTopic}"
             return
         }
         
