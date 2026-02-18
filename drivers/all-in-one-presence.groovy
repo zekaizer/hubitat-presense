@@ -14,6 +14,7 @@ metadata {
     definition (name: "All-in-One Presence Driver", namespace: "zekaizer", author: "Luke Lee", importUrl: "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/all-in-one-presence.groovy") {
         capability "PresenceSensor"
         capability "Refresh"
+        capability "Initialize"
         
         attribute "presence", "enum", ["present", "not present"]
         attribute "lastActivity", "string"
@@ -55,9 +56,10 @@ def initialize() {
     // Backup schedule to recover runIn if lost (every 5 minutes)
     schedule("0 */5 * * * ?", "ensureHeartbeatMonitoring")
 
-    // Start heartbeat timeout monitoring if we have a saved heartbeat
-    if (state.lastHeartbeatEpoch) {
-        scheduleHeartbeatTimeoutCheck()
+    // Reset heartbeat epoch to 0 (sentinel: waiting for first heartbeat after reboot)
+    // Prevents false timeout from stale epoch during hub downtime
+    if (state.lastHeartbeatEpoch != null) {
+        state.lastHeartbeatEpoch = 0
     }
 
     // If this is a component device, MQTT is handled by parent
@@ -204,8 +206,13 @@ def scheduleHeartbeatTimeoutCheck() {
 def checkHeartbeatTimeout() {
     try {
         Long lastHeartbeatEpoch = state.lastHeartbeatEpoch
-        if (!lastHeartbeatEpoch) {
+        if (lastHeartbeatEpoch == null) {
             if (debugLogging) log.debug "No heartbeat epoch stored, skipping timeout check"
+            return
+        }
+        if (lastHeartbeatEpoch == 0) {
+            // Epoch reset after reboot - waiting for first real heartbeat
+            if (debugLogging) log.debug "Heartbeat epoch reset (reboot recovery), skipping timeout check"
             return
         }
 
@@ -367,8 +374,16 @@ def ensureHeartbeatMonitoring() {
     // Recovery mechanism: ensure runIn schedule exists
     // This is called periodically by schedule() to recover from runIn loss
     try {
-        if (!state.lastHeartbeatEpoch) {
+        if (state.lastHeartbeatEpoch == null) {
             if (debugLogging) log.debug "ensureHeartbeatMonitoring: no heartbeat epoch, skipping"
+            return
+        }
+        if (state.lastHeartbeatEpoch == 0) {
+            // Epoch reset after reboot but no heartbeat received in 5+ minutes
+            if (device.currentValue("wifiPresence") == "connected") {
+                log.warn "ensureHeartbeatMonitoring: no heartbeat since reboot, setting disconnected"
+                updateWiFiPresence("disconnected")
+            }
             return
         }
 

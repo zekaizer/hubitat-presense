@@ -16,6 +16,7 @@
 metadata {
     definition (name: "Composite Presence Driver", namespace: "zekaizer", author: "Luke Lee", importUrl: "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/composite-presence-driver.groovy") {
         capability "Refresh"
+        capability "Initialize"
         
         attribute "lastActivity", "string"
         attribute "childCount", "number"
@@ -671,7 +672,15 @@ def ensureMqttConnection() {
     if (currentStatus == "connected") {
         // Connection alive - resubscribe to prevent silent subscription loss
         if (debugLogging) log.debug "ensureMqttConnection: connected, refreshing subscriptions"
-        subscribeToChildTopics()
+        try {
+            subscribeToChildTopics()
+        } catch (Exception e) {
+            // Stale status after hub restart - actual MQTT connection is gone
+            log.warn "ensureMqttConnection: subscribe failed, reconnecting MQTT: ${e.message}"
+            sendEvent(name: "mqttConnectionStatus", value: "disconnected")
+            state.mqttReconnectAttempts = 0
+            connectMQTT()
+        }
     } else if (currentStatus == "disconnected" || currentStatus == "error") {
         log.warn "ensureMqttConnection: MQTT is ${currentStatus}, attempting reconnection"
         state.mqttReconnectAttempts = 0
@@ -777,7 +786,8 @@ def mqttClientStatus(String status) {
         log.info "MQTT connected successfully"
         sendEvent(name: "mqttConnectionStatus", value: "connected")
         state.mqttReconnectAttempts = 0
-        subscribeToChildTopics()
+        // Subscribe via runIn - direct call in callback context may not persist
+        runIn(1, "subscribeToChildTopics", [overwrite: true])
     } else if (status.startsWith("Error:") || status.startsWith("Status: Connection lost")) {
         // Connection error or lost
         log.warn "MQTT connection issue: ${status}"
