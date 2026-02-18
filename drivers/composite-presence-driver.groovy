@@ -711,15 +711,17 @@ def attemptMqttReconnect() {
 def subscribeToChildTopics() {
     try {
         def children = getChildDevices()
+        def subscribedCount = 0
         children.each { child ->
             def macAddress = child.getDataValue("macAddress") ?: child.getSetting("macAddress")
             if (macAddress) {
                 subscribeToMacAddress(macAddress)
+                subscribedCount++
             }
         }
-        
-        log.info "Subscribed to MQTT topics for ${children.size()} child devices"
-        
+
+        log.info "Subscribed to MQTT topics for ${subscribedCount} presence devices"
+
     } catch (Exception e) {
         log.error "Failed to subscribe to child topics: ${e.message}"
     }
