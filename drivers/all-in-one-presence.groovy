@@ -85,18 +85,19 @@ def componentHandleHeartbeat(Long epochTime) {
             log.debug "Epoch time: ${epochTime}, Current time: ${currentTime}"
         }
         
-        // Update lastHeartbeat state (for timeout monitoring)
-        Date heartbeatDate = new Date(epochTime * 1000)
-        String heartbeatStr = heartbeatDate.toString()
-        state.lastHeartbeat = heartbeatStr
-        state.lastHeartbeatEpoch = epochTime
-        
         // Check if heartbeat is recent (within freshness threshold)
         Long timeDiff = currentTime - epochTime
         if (timeDiff <= HEARTBEAT_FRESHNESS_SECONDS) {
+            // Only update stored epoch if newer (prevents stale heartbeat from overwriting fresh one)
+            if (!state.lastHeartbeatEpoch || epochTime > state.lastHeartbeatEpoch) {
+                Date heartbeatDate = new Date(epochTime * 1000)
+                state.lastHeartbeat = heartbeatDate.toString()
+                state.lastHeartbeatEpoch = epochTime
+            }
+
             // WiFi is connected
             updateWiFiPresence("connected")
-            
+
             // Schedule heartbeat timeout check
             scheduleHeartbeatTimeoutCheck()
         } else {
