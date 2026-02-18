@@ -649,8 +649,7 @@ def connectMQTT() {
 
         interfaces.mqtt.connect(brokerUrl, clientId, username, password)
 
-        // Subscribe to topics after connection
-        runIn(2, "subscribeToChildTopics", [overwrite: true])
+        // Subscription is handled by mqttClientStatus callback on connection success
 
     } catch (Exception e) {
         log.error "Failed to connect to MQTT: ${e.message}"
