@@ -73,6 +73,9 @@ def initialize() {
     
     // Initialize MQTT connection
     connectMQTT()
+
+    // Schedule periodic MQTT health check (every 5 minutes)
+    schedule("0 */5 * * * ?", "ensureMqttConnection")
     
     // Always create Anyone Motion device
     createAnyonePresenceDevice()
@@ -661,6 +664,21 @@ def reconnectMQTT() {
     state.mqttReconnectAttempts = 0
     unschedule("attemptMqttReconnect")
     connectMQTT()
+}
+
+def ensureMqttConnection() {
+    // Periodic health check to recover from permanent MQTT disconnection
+    def currentStatus = device.currentValue("mqttConnectionStatus")
+
+    if (currentStatus == "connected") {
+        // Connection alive - resubscribe to prevent silent subscription loss
+        if (debugLogging) log.debug "ensureMqttConnection: connected, refreshing subscriptions"
+        subscribeToChildTopics()
+    } else if (currentStatus == "disconnected" || currentStatus == "error") {
+        log.warn "ensureMqttConnection: MQTT is ${currentStatus}, attempting reconnection"
+        state.mqttReconnectAttempts = 0
+        connectMQTT()
+    }
 }
 
 def scheduleReconnect() {
