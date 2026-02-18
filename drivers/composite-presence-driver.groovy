@@ -53,23 +53,29 @@ metadata {
 }
 
 def installed() {
-    if (debugLogging) log.debug "Composite Presence Driver installed"
+    log.info "Composite Presence Driver installed"
+    state.lastInitializeReason = "installed"
     initialize()
 }
 
 def updated() {
-    if (debugLogging) log.debug "Composite Presence Driver updated"
+    log.info "Composite Presence Driver updated"
+    state.lastInitializeReason = "updated"
     initialize()
 }
 
 def initialize() {
-    if (debugLogging) log.debug "Composite Presence Driver initialized"
-    
+    log.info "Composite Presence Driver initializing (reason: ${state.lastInitializeReason ?: 'manual'})"
+    state.lastInitialized = new Date().toString()
+
     // Restore saved state or set initial state
     restoreState()
     
     // Initialize MQTT connection
     connectMQTT()
+
+    // Schedule periodic MQTT health check (every 5 minutes)
+    schedule("0 */5 * * * ?", "ensureMqttConnection")
     
     // Always create Anyone Motion device
     createAnyonePresenceDevice()
@@ -105,6 +111,12 @@ def initialize() {
 
     // Update child count (which will also update anyone presence)
     updateChildStatistics()
+
+    // Log initialization summary
+    def mqttStatus = device.currentValue("mqttConnectionStatus") ?: "unknown"
+    def childCount = device.currentValue("childCount") ?: 0
+    def presentCount = device.currentValue("presentCount") ?: 0
+    log.info "Initialization complete - MQTT: ${mqttStatus}, children: ${childCount}, present: ${presentCount}"
 }
 
 def parse(String description) {
@@ -124,7 +136,7 @@ def parse(String description) {
         }
         
     } catch (Exception e) {
-        if (debugLogging) log.debug "Failed to parse MQTT message: ${e.message}"
+        log.warn "Failed to parse MQTT message: ${e.message}"
     }
 }
 
@@ -618,7 +630,7 @@ def connectMQTT() {
             return
         }
 
-        if (debugLogging) log.debug "Connecting to MQTT broker: ${settings.defaultMqttBroker}:${settings.defaultMqttPort}"
+        log.info "Connecting to MQTT broker: ${settings.defaultMqttBroker}:${settings.defaultMqttPort}"
         sendEvent(name: "mqttConnectionStatus", value: "connecting")
 
         // Disconnect if already connected
@@ -652,6 +664,21 @@ def reconnectMQTT() {
     state.mqttReconnectAttempts = 0
     unschedule("attemptMqttReconnect")
     connectMQTT()
+}
+
+def ensureMqttConnection() {
+    // Periodic health check to recover from permanent MQTT disconnection
+    def currentStatus = device.currentValue("mqttConnectionStatus")
+
+    if (currentStatus == "connected") {
+        // Connection alive - resubscribe to prevent silent subscription loss
+        if (debugLogging) log.debug "ensureMqttConnection: connected, refreshing subscriptions"
+        subscribeToChildTopics()
+    } else if (currentStatus == "disconnected" || currentStatus == "error") {
+        log.warn "ensureMqttConnection: MQTT is ${currentStatus}, attempting reconnection"
+        state.mqttReconnectAttempts = 0
+        connectMQTT()
+    }
 }
 
 def scheduleReconnect() {
@@ -691,9 +718,7 @@ def subscribeToChildTopics() {
             }
         }
         
-        if (debugLogging) {
-            log.debug "Subscribed to MQTT topics for ${children.size()} child devices"
-        }
+        log.info "Subscribed to MQTT topics for ${children.size()} child devices"
         
     } catch (Exception e) {
         log.error "Failed to subscribe to child topics: ${e.message}"
@@ -760,7 +785,7 @@ def mqttClientStatus(String status) {
         scheduleReconnect()
     } else if (status.startsWith("Status: Disconnected")) {
         // Clean disconnect (intentional)
-        if (debugLogging) log.debug "MQTT disconnected cleanly"
+        log.info "MQTT disconnected cleanly"
         sendEvent(name: "mqttConnectionStatus", value: "disconnected")
     }
 }
@@ -776,9 +801,7 @@ def findChildByMacAddress(String macAddress) {
         def normalizedChildMac = normalizeMacAddress(childMac)
         def normalizedSearchMac = normalizeMacAddress(macAddress)
         
-        if (debugLogging) {
-            log.debug "Comparing child MAC '${childMac}' (normalized: '${normalizedChildMac}') with search MAC '${macAddress}' (normalized: '${normalizedSearchMac}')"
-        }
+        if (debugLogging) log.debug "Comparing child MAC '${childMac}' (normalized: '${normalizedChildMac}') with search MAC '${macAddress}' (normalized: '${normalizedSearchMac}')"
         
         return childMac && normalizedChildMac == normalizedSearchMac
     }
@@ -898,7 +921,7 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         def childDevice = findChildByMacAddress(macAddress)
         
         if (!childDevice) {
-            if (debugLogging) log.debug "No child device found for MAC: ${macFromTopic}"
+            log.warn "No child device found for MAC: ${macFromTopic}"
             return
         }
         

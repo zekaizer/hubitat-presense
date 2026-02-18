@@ -34,17 +34,20 @@ metadata {
 }
 
 def installed() {
-    if (debugLogging) log.debug "All-in-One Presence Driver installed"
+    log.info "All-in-One Presence Driver installed"
+    state.lastInitializeReason = "installed"
     initialize()
 }
 
 def updated() {
-    if (debugLogging) log.debug "All-in-One Presence Driver updated"
+    log.info "All-in-One Presence Driver updated"
+    state.lastInitializeReason = "updated"
     initialize()
 }
 
 def initialize() {
-    if (debugLogging) log.debug "All-in-One Presence Driver initialized"
+    log.info "All-in-One Presence Driver initializing (reason: ${state.lastInitializeReason ?: 'manual'})"
+    state.lastInitialized = new Date().toString()
 
     // Restore saved state or set initial state
     restoreState()
@@ -61,6 +64,9 @@ def initialize() {
     if (!parent) {
         log.warn "This device is designed to work as a component of Composite Presence Driver"
     }
+
+    // Log initialization summary
+    log.info "Initialized: wifiPresence=${state.wifiPresence ?: 'unknown'}, gpsPresence=${state.gpsPresence ?: 'unknown'}, presence=${state.lastPresence ?: 'unknown'}, lastHeartbeat=${state.lastHeartbeat ?: 'none'}"
 }
 
 def parse(String description) {
@@ -94,7 +100,7 @@ def componentHandleHeartbeat(Long epochTime) {
             // Schedule heartbeat timeout check
             scheduleHeartbeatTimeoutCheck()
         } else {
-            if (debugLogging) log.debug "Heartbeat is too old (${timeDiff} seconds), ignoring"
+            log.warn "Heartbeat is too old (${timeDiff} seconds), ignoring"
         }
         
     } catch (Exception e) {
