@@ -567,9 +567,9 @@ def updateAnyonePresence(presentCount, guestPresent = false) {
     // If guest is present, always set motion to active
     def anyoneMotion = (presentCount > 0 || guestPresent) ? "active" : "inactive"
 
-    log.info "Updating Anyone Motion to: ${anyoneMotion} (presentCount: ${presentCount}, guestPresent: ${guestPresent})"
     def currentAnyoneMotion = anyoneDevice.currentValue("motion")
     if (currentAnyoneMotion != anyoneMotion) {
+        log.info "Anyone Motion changed to: ${anyoneMotion} (presentCount: ${presentCount}, guestPresent: ${guestPresent})"
         anyoneDevice.parse([[name: "motion", value: anyoneMotion, descriptionText: "${anyoneDevice.displayName} is ${anyoneMotion}"]])
     }
 }
@@ -718,7 +718,7 @@ def subscribeToChildTopics() {
             }
         }
 
-        log.info "Subscribed to MQTT topics for ${subscribedCount} presence devices"
+        if (debugLogging) log.debug "Subscribed to MQTT topics for ${subscribedCount} presence devices"
 
     } catch (Exception e) {
         log.error "Failed to subscribe to child topics: ${e.message}"
