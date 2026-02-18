@@ -53,18 +53,21 @@ metadata {
 }
 
 def installed() {
-    if (debugLogging) log.debug "Composite Presence Driver installed"
+    log.info "Composite Presence Driver installed"
+    state.lastInitializeReason = "installed"
     initialize()
 }
 
 def updated() {
-    if (debugLogging) log.debug "Composite Presence Driver updated"
+    log.info "Composite Presence Driver updated"
+    state.lastInitializeReason = "updated"
     initialize()
 }
 
 def initialize() {
-    if (debugLogging) log.debug "Composite Presence Driver initialized"
-    
+    log.info "Composite Presence Driver initializing (reason: ${state.lastInitializeReason ?: 'manual'})"
+    state.lastInitialized = new Date().toString()
+
     // Restore saved state or set initial state
     restoreState()
     
@@ -105,6 +108,12 @@ def initialize() {
 
     // Update child count (which will also update anyone presence)
     updateChildStatistics()
+
+    // Log initialization summary
+    def mqttStatus = device.currentValue("mqttConnectionStatus") ?: "unknown"
+    def childCount = device.currentValue("childCount") ?: 0
+    def presentCount = device.currentValue("presentCount") ?: 0
+    log.info "Initialization complete - MQTT: ${mqttStatus}, children: ${childCount}, present: ${presentCount}"
 }
 
 def parse(String description) {
