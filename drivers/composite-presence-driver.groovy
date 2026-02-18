@@ -913,12 +913,10 @@ def handleWiFiPresenceHeartbeat(String topic, String payload) {
         }
         
         String macFromTopic = macMatch[0][1]
-        
+
         // Find the corresponding child device by MAC address
-        String macAddress = macFromTopic.replace("-", ":")  // Convert back to colon format
-        if (debugLogging) log.debug "Converted MAC from topic '${macFromTopic}' to '${macAddress}'"
-        
-        def childDevice = findChildByMacAddress(macAddress)
+        // macFromTopic is already in dash format; findChildByMacAddress normalizes both sides
+        def childDevice = findChildByMacAddress(macFromTopic)
         
         if (!childDevice) {
             log.warn "No child device found for MAC: ${macFromTopic}"
