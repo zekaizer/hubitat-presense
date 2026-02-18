@@ -588,9 +588,7 @@ def restoreState() {
         state.lastActivity = currentTime
     }
 
-    // Initialize child statistics
-    sendEvent(name: "childCount", value: 0)
-    sendEvent(name: "presentCount", value: 0)
+    // Child statistics are set by updateChildStatistics() called later in initialize()
 
     // Initialize MQTT connection status
     sendEvent(name: "mqttConnectionStatus", value: "disconnected")
