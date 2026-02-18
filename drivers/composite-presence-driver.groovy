@@ -196,7 +196,8 @@ def createChildDevice(macAddress = null, deviceLabel = null) {
             if (debugLogging) log.debug "Set MAC address data value '${macAddress}' for child device"
             
             // Use runIn to delay setting configuration after device is fully created
-            runIn(1, "configureChildDevice", [data: [deviceId: childDeviceNetworkId, macAddress: macAddress]])
+            // overwrite: false to prevent losing config when creating multiple children rapidly
+            runIn(1, "configureChildDevice", [data: [deviceId: childDeviceNetworkId, macAddress: macAddress], overwrite: false])
             
             // Subscribe to MQTT topics will be done after configuration is complete
             
