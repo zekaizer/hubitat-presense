@@ -13,6 +13,7 @@
 metadata {
     definition (name: "All-in-One Presence Driver", namespace: "zekaizer", author: "Luke Lee", importUrl: "https://raw.githubusercontent.com/zekaizer/hubitat-presense/main/drivers/all-in-one-presence.groovy") {
         capability "PresenceSensor"
+        capability "MotionSensor"
         capability "Refresh"
         capability "Initialize"
         
@@ -167,13 +168,15 @@ def restoreState() {
         state.gpsPresence = "exited"
     }
     
-    // Restore final presence state
+    // Restore final presence state and derive motion state
     if (savedPresence) {
         if (debugLogging) log.debug "Restoring saved final presence state: ${savedPresence}"
         sendEvent(name: "presence", value: savedPresence)
+        sendEvent(name: "motion", value: (savedPresence == "present") ? "active" : "inactive")
     } else {
         if (debugLogging) log.debug "No saved presence state, setting to 'not present'"
         sendEvent(name: "presence", value: "not present")
+        sendEvent(name: "motion", value: "inactive")
         state.lastPresence = "not present"
     }
     
@@ -328,7 +331,9 @@ def updateFinalPresenceState(String presenceValue) {
     // Update presence state and save to state
     String currentTime = new Date().toString()
     
+    String motionValue = (presenceValue == "present") ? "active" : "inactive"
     sendEvent(name: "presence", value: presenceValue)
+    sendEvent(name: "motion", value: motionValue)
     sendEvent(name: "lastActivity", value: currentTime)
     
     // Save to state for recovery
