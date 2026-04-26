@@ -77,10 +77,14 @@ The driver now includes integration with homebridge-securitysystem for advanced 
 ### Overview
 The driver supports integration with homebridge-securitysystem to provide a unified presence and guest management interface through HomeKit's Security System.
 
+### Requirements
+- homebridge-securitysystem **v11.1.0 or later** (v11.0+ introduced breaking API changes; v11.1.0 added idempotent same-target re-call handling required by this driver).
+
 ### Configuration
 1. Enable Security System Integration in driver preferences
 2. Set the homebridge-securitysystem server URL and port
-3. Configure homebridge-securitysystem webhook to call Hubitat MakerAPI endpoint:
+3. Set the API Key preference to the same value as the plugin's `server_api_key` config option (Bearer token authentication)
+4. Configure homebridge-securitysystem webhook to call Hubitat MakerAPI endpoint:
    - Command: `eventSecuritySystem`
    - Parameter: event (optional)
 
@@ -92,7 +96,8 @@ The driver supports integration with homebridge-securitysystem to provide a unif
 
 ### Implementation Details
 - When Security System integration is enabled, it replaces the legacy Anyone Motion and Guest Access Lock devices
-- The driver uses `/status` API to get actual Security System state (current_mode, target_mode, arming, tripped)
+- The driver uses `GET /state` to read the system status (current_mode, target_mode, arming, tripped) and `PUT /mode/update` (JSON body `{mode, delay: 0}`) to change modes. Both endpoints require `Authorization: Bearer <api_key>`.
+- Mode updates send `delay: 0`, relying on the plugin's idempotent same-target handling (v11.1.0+) to immediately confirm a HomeKit-initiated `target=away` once Hubitat detects everyone has left.
 - Mode updates are event-based - only when presence count changes
 - The driver automatically updates Security System mode based on presence:
   - Any resident present → Home mode

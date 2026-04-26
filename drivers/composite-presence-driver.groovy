@@ -49,6 +49,7 @@ metadata {
             input "securitySystemEnabled", "bool", title: "Enable Security System Integration", defaultValue: false, required: false
             input "securitySystemUrl", "string", title: "Homebridge Security System URL", description: "e.g., http://192.168.1.100", required: false
             input "securitySystemPort", "string", title: "Homebridge Security System Port", defaultValue: "8585", required: false
+            input "securitySystemApiKey", "password", title: "API Key", description: "Bearer token (matches plugin's server_api_key)", required: false
         }
     }
 }
@@ -975,14 +976,19 @@ def eventSecuritySystem(String event = null) {
     def currentMode = status.current_mode
     def targetMode = status.target_mode
     log.info "Security System status - current: ${currentMode}, target: ${targetMode}"
-    
+
     // Store both modes in state
+    def previousMode = state.securitySystemMode
+    def previousTargetMode = state.securitySystemTargetMode
     state.securitySystemMode = currentMode
     state.securitySystemTargetMode = targetMode
-    
-    // Update the Security System status attributes
-    sendEvent(name: "securitySystemStatus", value: currentMode, descriptionText: "Security System is in ${currentMode} mode")
-    sendEvent(name: "securitySystemTargetMode", value: targetMode, descriptionText: "Security System target mode is ${targetMode}")
+
+    if (previousMode != currentMode) {
+        sendEvent(name: "securitySystemStatus", value: currentMode, descriptionText: "Security System is in ${currentMode} mode")
+    }
+    if (previousTargetMode != targetMode) {
+        sendEvent(name: "securitySystemTargetMode", value: targetMode, descriptionText: "Security System target mode is ${targetMode}")
+    }
     
     // Log if there's a pending transition
     if (targetMode != currentMode && debugLogging) {
@@ -1005,32 +1011,35 @@ def getSecuritySystemStatus() {
         log.error "Security System URL or port not configured"
         return null
     }
-    
+
     try {
         def result = null
-        String url = "${settings.securitySystemUrl}:${settings.securitySystemPort}/status"
-        
-        if (debugLogging) log.debug "Getting Security System status from: ${url}"
-        
+        String url = "${settings.securitySystemUrl}:${settings.securitySystemPort}/state"
+
+        if (debugLogging) log.debug "Getting Security System state from: ${url}"
+
         def params = [
             uri: url,
             timeout: 10,
             ignoreSSLIssues: true
         ]
-        
+        if (settings.securitySystemApiKey) {
+            params.headers = ["Authorization": "Bearer ${settings.securitySystemApiKey}"]
+        }
+
         httpGet(params) { response ->
             if (response.status == 200) {
                 result = response.data
-                if (debugLogging) log.debug "Security System status: ${result}"
+                if (debugLogging) log.debug "Security System state: ${result}"
             } else {
-                log.error "Failed to get Security System status: ${response.status}"
+                log.error "Failed to get Security System state: ${response.status}"
             }
         }
-        
+
         return result
-        
+
     } catch (Exception e) {
-        log.error "Exception while getting Security System status: ${e.message}"
+        log.error "Exception while getting Security System state: ${e.message}"
         return null
     }
 }
@@ -1040,50 +1049,50 @@ def updateSecuritySystemMode(String mode) {
         if (debugLogging) log.debug "Security System integration not properly configured"
         return
     }
-    
+
     // Don't update if mode is off (guest access)
     if (state.securitySystemMode == "off") {
         if (debugLogging) log.debug "Security System is in off mode (guest access), skipping automatic update"
         return
     }
-    
+
     // If in night mode and trying to set home, keep it as night
     if (state.securitySystemMode == "night" && mode == "home") {
         if (debugLogging) log.debug "Security System is in night mode, keeping night instead of home"
         mode = "night"
     }
-    
+
     try {
-        String url = "${settings.securitySystemUrl}:${settings.securitySystemPort}/${mode}"
-        
+        String url = "${settings.securitySystemUrl}:${settings.securitySystemPort}/mode/update"
+
         if (debugLogging) log.debug "Sending Security System mode update: ${mode} to ${url}"
-        
+
         def params = [
             uri: url,
+            contentType: "application/json",
+            body: [mode: mode, delay: 0],
             timeout: 10,
             ignoreSSLIssues: true
         ]
-        
-        httpGet(params) { response ->
-            if (response.status == 200) {
+        if (settings.securitySystemApiKey) {
+            params.headers = ["Authorization": "Bearer ${settings.securitySystemApiKey}"]
+        }
+
+        httpPut(params) { response ->
+            if (response.status in [200, 204]) {
                 log.info "Successfully sent Security System mode update: ${mode}"
-                
-                // Get actual status to confirm the change
-                def status = getSecuritySystemStatus()
-                if (status && !status.arming) {
-                    // Update local state with confirmed mode
-                    state.securitySystemMode = status.current_mode
-                    sendEvent(name: "securitySystemStatus", value: status.current_mode, descriptionText: "Security System is in ${status.current_mode} mode")
-                    
-                    if (status.current_mode != mode && debugLogging) {
-                        log.debug "Note: Requested ${mode} but system is in ${status.current_mode} mode"
-                    }
+
+                // PUT delay=0 applies the mode immediately on the plugin side; the next
+                // webhook will reconcile if anything diverges.
+                if (state.securitySystemMode != mode) {
+                    state.securitySystemMode = mode
+                    sendEvent(name: "securitySystemStatus", value: mode, descriptionText: "Security System is in ${mode} mode")
                 }
             } else {
                 log.error "Failed to update Security System mode: ${response.status}"
             }
         }
-        
+
     } catch (Exception e) {
         log.error "Exception while updating Security System mode: ${e.message}"
     }
